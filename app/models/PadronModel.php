@@ -1272,37 +1272,73 @@ class PadronModel
 
     public function getDistribucionFamiliar($obrasoc, $periodo)
     {
-        $corte = $this->asegurarCorte($obrasoc, $periodo);
-        if (empty($corte['disponible'])) {
-            return $this->respuestaFamiliarVacia(array('El corte activo no tiene afiliados cargados para esta obra social.'));
-        }
+        $pedido = trim((string) $periodo);
+        $obra = strtoupper(trim((string) $obrasoc));
 
-        $filtro = $this->filtroCorteActivo($obrasoc, $corte['periodo']);
-        $sql = "SELECT CASE
-                         WHEN CODADH IS NULL OR TRIM(CODADH) = '' OR TRIM(CODADH) IN ('00', '000') THEN 'Titulares'
-                         ELSE 'Adherentes'
-                       END AS grupo,
-                       COUNT(*) AS cantidad
-                  FROM vfpmedicos.padron_activos"
-             . $filtro['sql']
-             . " GROUP BY grupo";
+        // CODADH se compara siempre como texto: 'ADH' no puede convertirse a 0.
+        $sql = "SELECT TRIM(PERIODO) AS periodo,
+                       SUM(CASE
+                           WHEN UPPER(TRIM(CODADH)) = 'ADH' THEN 1
+                           WHEN TRIM(CODADH) != '' AND CODADH IS NOT NULL AND TRIM(CODADH) NOT IN ('00', '000', '0', 'TIT') THEN 1
+                           ELSE 0
+                       END) AS adherentes,
+                       SUM(CASE
+                           WHEN CODADH IS NULL THEN 1
+                           WHEN TRIM(CODADH) = '' THEN 1
+                           WHEN TRIM(CODADH) IN ('00', '000', '0', 'TIT') THEN 1
+                           ELSE 0
+                       END) AS titulares
+                  FROM vfpmedicos.t_padron
+                 WHERE PERIODO IS NOT NULL
+                   AND TRIM(PERIODO) <> ''";
+        $params = array();
+        if ($obra !== '') {
+            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
+            $params[':obra'] = $obra;
+        }
+        $sql .= ' GROUP BY TRIM(PERIODO)';
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($filtro['params']);
+        $stmt->execute($params);
         $filas = $stmt->fetchAll();
 
-        $titulares = 0;
-        $adherentes = 0;
+        $elegido = null;
+        $ultimo = null;
         if (is_array($filas)) {
             foreach ($filas as $fila) {
-                if ($fila['grupo'] === 'Adherentes') {
-                    $adherentes = (int) $fila['cantidad'];
-                } else {
-                    $titulares = (int) $fila['cantidad'];
+                $clave = trim((string) $this->valorFila($fila, 'periodo'));
+                $titularesFila = (int) $this->valorFila($fila, 'titulares');
+                $adherentesFila = (int) $this->valorFila($fila, 'adherentes');
+                if ($clave === '' || ($titularesFila + $adherentesFila) === 0) {
+                    continue;
+                }
+                $item = array(
+                    'periodo'    => $clave,
+                    'titulares'  => $titularesFila,
+                    'adherentes' => $adherentesFila,
+                    'orden'      => $this->ordenPeriodo($clave),
+                );
+                if ($pedido !== '' && $clave === $pedido) {
+                    $elegido = $item;
+                }
+                if ($ultimo === null || $item['orden'] > $ultimo['orden']) {
+                    $ultimo = $item;
                 }
             }
         }
 
+        if ($elegido === null) {
+            $elegido = $ultimo;
+        }
+        if ($elegido === null) {
+            return $this->respuestaFamiliarVacia(array(
+                'No hay marcas de titular o adherente en el padrón histórico de esta obra.',
+            ));
+        }
+
+        $titulares = (int) $elegido['titulares'];
+        $adherentes = (int) $elegido['adherentes'];
+        $periodoUsado = $elegido['periodo'];
         $total = $titulares + $adherentes;
         $ratio = null;
         if ($titulares > 0) {
@@ -1310,14 +1346,17 @@ class PadronModel
         }
 
         $lineas = array();
+        if ($pedido !== '' && $pedido !== $periodoUsado) {
+            $lineas[] = 'El corte ' . $pedido . ' no tiene CODADH en el padrón histórico. La distribución se toma de ' . $periodoUsado . '.';
+        }
         if ($titulares === 0 && $adherentes === 0) {
-            $lineas[] = 'El corte ' . $corte['periodo'] . ' no tiene afiliados para medir la carga familiar.';
+            $lineas[] = 'El corte ' . $periodoUsado . ' no tiene afiliados para medir la carga familiar.';
         } elseif ($titulares === 0) {
-            $lineas[] = 'No hay titulares en el corte ' . $corte['periodo'] . '. Los ' . $this->formatoEntero($adherentes) . ' afiliados son adherentes.';
+            $lineas[] = 'No hay titulares en el corte ' . $periodoUsado . '. Los ' . $this->formatoEntero($adherentes) . ' afiliados son adherentes.';
         } else {
             $lineas[] = 'Hay ' . $this->formatoRatio($ratio) . ' adherentes por cada titular ('
                 . $this->formatoEntero($adherentes) . ' adherentes y '
-                . $this->formatoEntero($titulares) . ' titulares en ' . $corte['periodo'] . ').';
+                . $this->formatoEntero($titulares) . ' titulares en ' . $periodoUsado . ').';
         }
         if ($total > 0) {
             $pctAdh = round(($adherentes / $total) * 100, 1);
@@ -1330,6 +1369,7 @@ class PadronModel
             'titulares'  => $titulares,
             'adherentes' => $adherentes,
             'ratio'      => $ratio,
+            'periodo'    => $periodoUsado,
             'lineas'     => $lineas,
         );
     }

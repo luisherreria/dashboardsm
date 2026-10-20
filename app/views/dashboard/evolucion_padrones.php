@@ -340,7 +340,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                     <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
                     Análisis del Indicador y Diagnóstico
                 </div>
-                <p class="mb-2 text-xs text-slate-600" id="descTecnica_familiar">Separa titulares y adherentes según CODADH. El código 00, 000 o vacío corresponde al titular; cualquier otro valor es adherente.</p>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_familiar">Separa titulares y adherentes comparando CODADH como texto. Vacío, 00, 000, 0 o TIT es titular. ADH y el resto de los códigos son adherentes.</p>
                 <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_familiar">
                     <p>El diagnóstico se calcula al actualizar el filtro.</p>
                 </div>
