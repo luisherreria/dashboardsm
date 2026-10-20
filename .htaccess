@@ -1,0 +1,18 @@
+Options -Indexes
+AddDefaultCharset UTF-8
+
+<FilesMatch "\.(env|log|sql|bak|ini|json|md)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order Allow,Deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^config/ - [F,L]
+    RewriteRule ^app/ - [F,L]
+</IfModule>
