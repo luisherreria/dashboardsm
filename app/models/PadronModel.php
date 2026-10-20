@@ -802,6 +802,276 @@ class PadronModel
         );
     }
 
+    /**
+     * Evolución mensual de enrol1 en t_padron.
+     * El gráfico usa los últimos períodos con marca; el diagnóstico
+     * compara el semestre reciente y la discapacidad contra el año previo.
+     */
+    public function getEvolucionProgramasEspeciales($obrasoc, $limitePeriodos = 12)
+    {
+        $limite = (int) $limitePeriodos;
+        if ($limite < 2) {
+            $limite = 12;
+        }
+        if ($limite > 36) {
+            $limite = 36;
+        }
+
+        $obra = strtoupper(trim((string) $obrasoc));
+        $sql = "SELECT TRIM(PERIODO) AS periodo, TRIM(ENROL1) AS marca, COUNT(*) AS total
+                  FROM vfpmedicos.t_padron
+                 WHERE ENROL1 IS NOT NULL
+                   AND TRIM(ENROL1) <> ''";
+        $params = array();
+        if ($obra !== '') {
+            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
+            $params[':obra'] = $obra;
+        }
+        $sql .= ' GROUP BY TRIM(PERIODO), TRIM(ENROL1)';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $filas = $stmt->fetchAll();
+
+        $matriz = array();
+        $totales = array();
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+                $marca = trim((string) $this->valorFila($fila, 'marca'));
+                $cantidad = (int) $this->valorFila($fila, 'total');
+                if ($periodo === '' || $marca === '' || $cantidad === 0) {
+                    continue;
+                }
+                $etiqueta = $this->etiquetaPrograma($marca);
+                if (!isset($matriz[$periodo])) {
+                    $matriz[$periodo] = array();
+                }
+                if (!isset($matriz[$periodo][$etiqueta])) {
+                    $matriz[$periodo][$etiqueta] = 0;
+                }
+                $matriz[$periodo][$etiqueta] += $cantidad;
+                if (!isset($totales[$etiqueta])) {
+                    $totales[$etiqueta] = 0;
+                }
+                $totales[$etiqueta] += $cantidad;
+            }
+        }
+
+        $periodos = array();
+        foreach ($matriz as $periodo => $marcas) {
+            $periodos[] = $periodo;
+        }
+        usort($periodos, array($this, 'compararPeriodoAsc'));
+
+        $cantidadPeriodos = count($periodos);
+        if ($cantidadPeriodos === 0) {
+            return array(
+                'message'  => 'No hay marcas enrol1 en el padrón histórico de esta obra.',
+                'labels'   => array(),
+                'datasets' => array(),
+                'lineas'   => array('No hay marcas enrol1 en t_padron para esta obra social.'),
+            );
+        }
+
+        $desde = 0;
+        if ($cantidadPeriodos > $limite) {
+            $desde = $cantidadPeriodos - $limite;
+        }
+        $labels = array();
+        for ($i = $desde; $i < $cantidadPeriodos; $i++) {
+            $labels[] = $periodos[$i];
+        }
+
+        arsort($totales);
+        $principales = array();
+        $vistos = 0;
+        foreach ($totales as $etiqueta => $suma) {
+            if ($vistos >= 6) {
+                break;
+            }
+            $principales[] = $etiqueta;
+            $vistos++;
+        }
+
+        $datasets = array();
+        foreach ($principales as $etiqueta) {
+            $serie = array();
+            foreach ($labels as $periodo) {
+                $valor = 0;
+                if (isset($matriz[$periodo]) && isset($matriz[$periodo][$etiqueta])) {
+                    $valor = (int) $matriz[$periodo][$etiqueta];
+                }
+                $serie[] = $valor;
+            }
+            $datasets[] = array(
+                'label' => $etiqueta,
+                'data'  => $serie,
+            );
+        }
+
+        $lineas = $this->diagnosticarProgramas($labels, $datasets, $matriz, $periodos);
+
+        return array(
+            'message'  => '',
+            'labels'   => $labels,
+            'datasets' => $datasets,
+            'lineas'   => $lineas,
+        );
+    }
+
+    private function diagnosticarProgramas($labels, $datasets, $matriz, $periodos)
+    {
+        $lineas = array();
+        $n = count($labels);
+        if ($n === 0 || count($datasets) === 0) {
+            return array('No hay series de enrol1 para diagnosticar.');
+        }
+
+        $ultimo = $labels[$n - 1];
+        $baseSemestre = 0;
+        if ($n > 6) {
+            $baseSemestre = $n - 7;
+        }
+        $periodoBase = $labels[$baseSemestre];
+        $mejor = null;
+        foreach ($datasets as $serie) {
+            $ahora = (int) $serie['data'][$n - 1];
+            $antes = (int) $serie['data'][$baseSemestre];
+            $delta = $ahora - $antes;
+            if ($mejor === null || $delta > $mejor['delta']) {
+                $mejor = array(
+                    'label'  => $serie['label'],
+                    'delta'  => $delta,
+                    'ahora'  => $ahora,
+                    'antes'  => $antes,
+                );
+            }
+        }
+
+        if ($mejor !== null) {
+            if ($mejor['delta'] > 0) {
+                $lineas[] = 'En el último semestre la patología que más creció fue ' . $mejor['label']
+                    . ', con ' . $this->formatoFirmado($mejor['delta']) . ' casos (de '
+                    . $this->formatoEntero($mejor['antes']) . ' en ' . $periodoBase . ' a '
+                    . $this->formatoEntero($mejor['ahora']) . ' en ' . $ultimo . ').';
+            } elseif ($mejor['delta'] < 0) {
+                $lineas[] = 'En el último semestre ninguna patología creció. La menor caída fue '
+                    . $mejor['label'] . ', con ' . $this->formatoFirmado($mejor['delta']) . ' casos (de '
+                    . $this->formatoEntero($mejor['antes']) . ' en ' . $periodoBase . ' a '
+                    . $this->formatoEntero($mejor['ahora']) . ' en ' . $ultimo . ').';
+            } else {
+                $lineas[] = 'En el último semestre ' . $mejor['label'] . ' se mantuvo en '
+                    . $this->formatoEntero($mejor['ahora']) . ' casos, entre ' . $periodoBase . ' y ' . $ultimo . '.';
+            }
+        }
+
+        $lineaCud = $this->variacionInteranualCud($matriz, $periodos, $ultimo);
+        if ($lineaCud !== '') {
+            $lineas[] = $lineaCud;
+        }
+
+        return $lineas;
+    }
+
+    private function variacionInteranualCud($matriz, $periodos, $ultimo)
+    {
+        $anterior = $this->periodoAnioAnterior($ultimo);
+        if ($anterior === '') {
+            return '';
+        }
+
+        $actual = $this->totalCudPeriodo($matriz, $ultimo);
+        $previo = null;
+        foreach ($periodos as $periodo) {
+            if ($periodo === $anterior) {
+                $previo = $this->totalCudPeriodo($matriz, $periodo);
+                break;
+            }
+        }
+        if ($previo === null) {
+            return 'No hay corte de Discapacidad / CUD en ' . $anterior . ' para medir la variación interanual.';
+        }
+        if ($previo === 0) {
+            return 'En ' . $anterior . ' no había casos de Discapacidad / CUD. En ' . $ultimo . ' hay '
+                . $this->formatoEntero($actual) . '.';
+        }
+
+        $delta = $actual - $previo;
+        $pct = round(($delta / $previo) * 100, 1);
+        return 'La variación interanual de Discapacidad / CUD en ' . $ultimo . ' respecto de ' . $anterior
+            . ' es de ' . $this->formatoFirmado($delta) . ' casos (' . $this->formatoPorcentajeFirmado($pct) . ').';
+    }
+
+    private function totalCudPeriodo($matriz, $periodo)
+    {
+        if (!isset($matriz[$periodo])) {
+            return 0;
+        }
+        $total = 0;
+        foreach ($matriz[$periodo] as $etiqueta => $cantidad) {
+            if ($etiqueta === 'Discapacidad / CUD') {
+                $total += (int) $cantidad;
+            }
+        }
+        return $total;
+    }
+
+    private function periodoAnioAnterior($periodo)
+    {
+        $partes = explode('/', trim((string) $periodo));
+        if (count($partes) !== 2) {
+            return '';
+        }
+        $anio = (int) $partes[0];
+        $mes = (int) $partes[1];
+        if ($anio < 1 || $mes < 1 || $mes > 12) {
+            return '';
+        }
+        $anio = $anio - 1;
+        if ($anio < 0) {
+            return '';
+        }
+        return sprintf('%02d/%02d', $anio, $mes);
+    }
+
+    private function etiquetaPrograma($marca)
+    {
+        $texto = strtoupper(trim((string) $marca));
+        if (strpos($texto, 'MEDICAMENT') !== false) {
+            return 'Discapacidad (medicamentos)';
+        }
+        if (strpos($texto, 'DISCAP') !== false || strpos($texto, 'CUD') !== false) {
+            return 'Discapacidad / CUD';
+        }
+        if (strpos($texto, 'ONCO') !== false) {
+            return 'Oncología';
+        }
+        if (strpos($texto, 'HELIOS') !== false) {
+            return 'Plan Helios';
+        }
+        if (strpos($texto, 'MATERNO') !== false) {
+            return 'Materno infantil';
+        }
+        if (strpos($texto, 'CRON') !== false) {
+            return 'Crónicos';
+        }
+        return trim((string) $marca);
+    }
+
+    private function compararPeriodoAsc($a, $b)
+    {
+        $ordenA = $this->ordenPeriodo($a);
+        $ordenB = $this->ordenPeriodo($b);
+        if ($ordenA === $ordenB) {
+            return 0;
+        }
+        if ($ordenA < $ordenB) {
+            return -1;
+        }
+        return 1;
+    }
+
     private function lineasInteranual($dato)
     {
         if (!is_array($dato) || empty($dato['disponible'])) {
@@ -984,7 +1254,7 @@ class PadronModel
                 'familiar'     => $this->respuestaFamiliarVacia($aviso),
                 'etario'       => $this->respuestaEtariaVacia($aviso),
                 'planes'       => $this->respuestaPlanesVacia($aviso),
-                'localidades'  => $this->respuestaLocalidadesVacia($aviso),
+                'localidades'  => $this->getTopLocalidades($obrasoc, ''),
             );
         }
 
@@ -1238,96 +1508,134 @@ class PadronModel
 
     public function getTopLocalidades($obrasoc, $periodo)
     {
-        $corte = $this->asegurarCorte($obrasoc, $periodo);
-        if (empty($corte['disponible'])) {
-            return $this->respuestaLocalidadesVacia(array('El corte activo no tiene afiliados cargados para esta obra social.'));
+        $origen = $this->periodoConLocalidad($obrasoc, $periodo);
+        if ($origen['periodo'] === '') {
+            return $this->respuestaLocalidadesVacia(array('No hay localidades informadas para esta obra social.'));
         }
 
-        $filtro = $this->filtroCorteActivo($obrasoc, $corte['periodo']);
-        $sql = "SELECT CASE
-                         WHEN LOCALIDAD IS NULL OR TRIM(LOCALIDAD) = '' THEN ''
-                         ELSE TRIM(LOCALIDAD)
-                       END AS zona,
-                       COUNT(*) AS cantidad
-                  FROM vfpmedicos.padron_activos"
-             . $filtro['sql']
-             . " GROUP BY zona
-                 ORDER BY cantidad DESC
-                 LIMIT 10";
+        $obra = strtoupper(trim((string) $obrasoc));
+        $sql = "SELECT TRIM(LOCALIDAD) AS localidad, COUNT(*) AS total
+                  FROM vfpmedicos.t_padron
+                 WHERE TRIM(PERIODO) = :periodo
+                   AND LOCALIDAD IS NOT NULL
+                   AND TRIM(LOCALIDAD) <> ''";
+        $params = array(':periodo' => $origen['periodo']);
+        if ($obra !== '') {
+            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
+            $params[':obra'] = $obra;
+        }
+        $sql .= ' GROUP BY TRIM(LOCALIDAD) ORDER BY total DESC LIMIT 10';
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($filtro['params']);
+        $stmt->execute($params);
         $filas = $stmt->fetchAll();
-
-        $campo = 'LOCALIDAD';
-        $titulo = 'Top 10 localidades';
-        $conDato = false;
-        if (is_array($filas)) {
-            foreach ($filas as $fila) {
-                if (trim((string) $fila['zona']) !== '') {
-                    $conDato = true;
-                    break;
-                }
-            }
-        }
-
-        if (!$conDato) {
-            $campo = 'CODPOS';
-            $titulo = 'Top 10 códigos postales';
-            $sql = "SELECT CASE
-                             WHEN CODPOS IS NULL OR TRIM(CODPOS) = '' THEN 'Sin código'
-                             ELSE TRIM(CODPOS)
-                           END AS zona,
-                           COUNT(*) AS cantidad
-                      FROM vfpmedicos.padron_activos"
-                 . $filtro['sql']
-                 . " GROUP BY zona
-                     ORDER BY cantidad DESC
-                     LIMIT 10";
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($filtro['params']);
-            $filas = $stmt->fetchAll();
-        }
 
         $labels = array();
         $data = array();
-        $totalZona = 0;
         if (is_array($filas)) {
             foreach ($filas as $fila) {
-                $etiqueta = trim((string) $fila['zona']);
-                if ($etiqueta === '') {
-                    $etiqueta = 'Sin localidad';
+                $nombre = trim((string) $this->valorFila($fila, 'localidad'));
+                if ($nombre === '') {
+                    continue;
                 }
-                $cantidad = (int) $fila['cantidad'];
-                $labels[] = $etiqueta;
-                $data[] = $cantidad;
-                $totalZona += $cantidad;
+                $labels[] = $nombre;
+                $data[] = (int) $this->valorFila($fila, 'total');
             }
         }
 
-        $totalCorte = (int) $corte['total'];
+        $totalPeriodo = (int) $origen['total'];
         $lineas = array();
-        if (count($labels) === 0 || $totalCorte === 0) {
-            $lineas[] = 'El corte ' . $corte['periodo'] . ' no tiene zona para rankear.';
-        } elseif ($campo === 'CODPOS') {
-            $pct = round(($data[0] / $totalCorte) * 100, 1);
-            $lineas[] = 'El corte ' . $corte['periodo'] . ' no informa LOCALIDAD. La concentración geográfica se lee por código postal: '
-                . $labels[0] . ' reúne ' . $this->formatoEntero($data[0]) . ' afiliados ('
-                . $this->formatoPorcentaje($pct) . ').';
+        if (count($labels) === 0 || $totalPeriodo === 0) {
+            $lineas[] = 'No hay localidades informadas para esta obra social.';
         } else {
-            $pct = round(($data[0] / $totalCorte) * 100, 1);
-            $lineas[] = 'La localidad con más afiliados es ' . $labels[0] . ', con '
+            $pct = round(($data[0] / $totalPeriodo) * 100, 1);
+            $lineas[] = 'La localidad con mayor concentración es ' . $labels[0] . ', con '
                 . $this->formatoEntero($data[0]) . ' afiliados ('
-                . $this->formatoPorcentaje($pct) . ' del corte ' . $corte['periodo'] . ').';
+                . $this->formatoPorcentaje($pct) . ' de los afiliados con localidad informada en '
+                . $origen['periodo'] . ').';
         }
 
         return array(
-            'titulo' => $titulo,
-            'campo'  => $campo,
-            'labels' => $labels,
-            'data'   => $data,
-            'lineas' => $lineas,
+            'titulo'  => 'Top 10 Localidades',
+            'campo'   => 'LOCALIDAD',
+            'periodo' => $origen['periodo'],
+            'labels'  => $labels,
+            'data'    => $data,
+            'lineas'  => $lineas,
         );
+    }
+
+    /**
+     * Último período de t_padron con LOCALIDAD cargada.
+     * Si el período pedido también tiene localidades, se usa ese.
+     */
+    private function periodoConLocalidad($obrasoc, $periodoPreferido)
+    {
+        $obra = strtoupper(trim((string) $obrasoc));
+        $sql = "SELECT TRIM(PERIODO) AS periodo, COUNT(*) AS total
+                  FROM vfpmedicos.t_padron
+                 WHERE LOCALIDAD IS NOT NULL
+                   AND TRIM(LOCALIDAD) <> ''";
+        $params = array();
+        if ($obra !== '') {
+            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
+            $params[':obra'] = $obra;
+        }
+        $sql .= ' GROUP BY TRIM(PERIODO)';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $filas = $stmt->fetchAll();
+
+        $preferido = trim((string) $periodoPreferido);
+        $mejorPeriodo = '';
+        $mejorOrden = -1;
+        $mejorTotal = 0;
+        $totalPreferido = 0;
+
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+                $total = (int) $this->valorFila($fila, 'total');
+                if ($periodo === '' || $total === 0) {
+                    continue;
+                }
+                if ($periodo === $preferido) {
+                    $totalPreferido = $total;
+                }
+                $orden = $this->ordenPeriodo($periodo);
+                if ($orden > $mejorOrden) {
+                    $mejorOrden = $orden;
+                    $mejorPeriodo = $periodo;
+                    $mejorTotal = $total;
+                }
+            }
+        }
+
+        if ($totalPreferido > 0) {
+            return array('periodo' => $preferido, 'total' => $totalPreferido);
+        }
+
+        return array('periodo' => $mejorPeriodo, 'total' => $mejorTotal);
+    }
+
+    private function valorFila($fila, $clave)
+    {
+        if (!is_array($fila)) {
+            return null;
+        }
+        if (isset($fila[$clave])) {
+            return $fila[$clave];
+        }
+        $mayuscula = strtoupper($clave);
+        if (isset($fila[$mayuscula])) {
+            return $fila[$mayuscula];
+        }
+        $minuscula = strtolower($clave);
+        if (isset($fila[$minuscula])) {
+            return $fila[$minuscula];
+        }
+        return null;
     }
 
     private function resolverCorteActivo($obrasoc)
@@ -1467,11 +1775,12 @@ class PadronModel
     private function respuestaLocalidadesVacia($lineas)
     {
         return array(
-            'titulo' => 'Top 10 localidades',
-            'campo'  => 'LOCALIDAD',
-            'labels' => array(),
-            'data'   => array(),
-            'lineas' => $lineas,
+            'titulo'  => 'Top 10 Localidades',
+            'campo'   => 'LOCALIDAD',
+            'periodo' => '',
+            'labels'  => array(),
+            'data'    => array(),
+            'lineas'  => $lineas,
         );
     }
 

@@ -155,6 +155,65 @@ class DashboardController extends Controller
         $this->json($respuesta);
     }
 
+    public function ajaxGetEvolucionEspeciales()
+    {
+        if (!$this->estaLogueado()) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La sesión expiró. Vuelva a ingresar.',
+            ));
+        }
+
+        if (!isset($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Método no permitido.',
+            ));
+        }
+
+        $tokenSesion = isset($_SESSION['csrf_token']) ? (string) $_SESSION['csrf_token'] : '';
+        $tokenPost = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+        if ($tokenSesion === '' || $tokenPost === '' || !hash_equals($tokenSesion, $tokenPost)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La sesión del formulario venció. Recargue la página.',
+            ));
+        }
+
+        $obrasoc = isset($_POST['obrasoc']) ? trim((string) $_POST['obrasoc']) : '';
+        if ($obrasoc !== '' && !preg_match('/^[A-Za-z0-9 .\/\-]{1,12}$/', $obrasoc)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La obra social no es válida.',
+            ));
+        }
+
+        $limite = 12;
+        if (isset($_POST['limite'])) {
+            $limite = (int) $_POST['limite'];
+        }
+
+        try {
+            $modelo = new PadronModel();
+            $datos = $modelo->getEvolucionProgramasEspeciales($obrasoc, $limite);
+        } catch (Exception $e) {
+            error_log('DashboardController::ajaxGetEvolucionEspeciales — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudo calcular la evolución de los programas especiales.',
+            ));
+        }
+
+        if (!is_array($datos)) {
+            $datos = array();
+        }
+        $datos['status'] = 'success';
+        if (!isset($datos['message'])) {
+            $datos['message'] = '';
+        }
+        $this->json($datos);
+    }
+
     public function administradores()
     {
         $this->requerirLogin();

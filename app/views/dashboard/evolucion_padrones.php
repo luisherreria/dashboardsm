@@ -280,9 +280,14 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
 </section>
 
 <section class="mb-4 rounded-2xl bg-white p-4 shadow-sm">
-    <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-        <i class="fa-solid fa-user-group text-[#1565c0]"></i>
-        Programas especiales y patologías
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <i class="fa-solid fa-user-group text-[#1565c0]"></i>
+            Programas especiales y patologías
+        </div>
+        <button type="button" id="btnVerEvolucionEspeciales" class="flex items-center space-x-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-all hover:bg-blue-700">
+            <i class="fa-solid fa-chart-line mr-1"></i> Ver Evolución Temporal
+        </button>
     </div>
     <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
@@ -388,7 +393,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         <section class="rounded-2xl bg-white p-4 shadow-sm">
             <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <i class="fa-solid fa-location-dot text-[#1565c0]"></i>
-                <span id="tituloLocalidades">Top 10 localidades</span>
+                <span id="tituloLocalidades">Top 10 Localidades</span>
             </div>
             <div class="relative h-96">
                 <canvas id="graficoLocalidades"></canvas>
@@ -398,12 +403,41 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                     <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
                     Análisis del Indicador y Diagnóstico
                 </div>
-                <p class="mb-2 text-xs text-slate-600" id="descTecnica_localidades">Concentración geográfica de los afiliados del corte. Si LOCALIDAD no está informada, el gráfico usa el código postal.</p>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_localidades">Concentración geográfica de los afiliados según la localidad informada en el padrón.</p>
                 <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_localidades">
                     <p>El diagnóstico se calcula al actualizar el filtro.</p>
                 </div>
             </div>
         </section>
+    </div>
+</div>
+
+<div id="modalEvolucionEspeciales" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/45 p-4">
+    <div class="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between bg-gradient-to-r from-[#0d47a1] to-[#1565c0] px-5 py-4 text-white">
+            <div>
+                <h2 class="text-sm font-bold">Evolución de programas especiales</h2>
+                <p class="text-xs text-white/75" id="rangoEvolucionEspeciales">enrol1 por período</p>
+            </div>
+            <button type="button" id="cerrarEvolucionEspeciales" class="rounded-md p-2 hover:bg-white/15" aria-label="Cerrar">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-5">
+            <div class="relative h-80">
+                <canvas id="chartEvolucionEspeciales"></canvas>
+            </div>
+            <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                    Análisis del Indicador y Diagnóstico
+                </div>
+                <p class="mb-2 text-xs text-slate-600">Compara la marcha de cada programa de alto costo a lo largo de los períodos con marca enrol1 en el padrón histórico.</p>
+                <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_evolucionEspeciales">
+                    <p>El diagnóstico se calcula al abrir la evolución.</p>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -609,6 +643,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
     var chartEtario = null;
     var chartPlanes = null;
     var chartLocalidades = null;
+    var chartEspeciales = null;
     var tabla = null;
     var contextoDiagnosticoIa = '';
     var datosDemografia = null;
@@ -1240,7 +1275,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         dibujarFamiliar(data.familiar || { labels: [], data: [] });
         dibujarEtario(data.etario || { labels: [], series: [] });
         dibujarPlanes(data.planes || { labels: [], data: [] });
-        dibujarLocalidades(data.localidades || { labels: [], data: [], titulo: 'Top 10 localidades' });
+        dibujarLocalidades(data.localidades || { labels: [], data: [], titulo: 'Top 10 Localidades' });
         pintarCaja('insightDinamico_familiar', (data.familiar || {}).lineas);
         pintarCaja('insightDinamico_etario', (data.etario || {}).lineas);
         pintarCaja('insightDinamico_planes', (data.planes || {}).lineas);
@@ -1424,6 +1459,113 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             return;
         }
         abrirDetalle(fila);
+    });
+
+    function abrirEvolucionEspeciales() {
+        var modal = document.getElementById('modalEvolucionEspeciales');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function cerrarEvolucionEspeciales() {
+        var modal = document.getElementById('modalEvolucionEspeciales');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+
+    function dibujarEvolucionEspeciales(data) {
+        var rango = document.getElementById('rangoEvolucionEspeciales');
+        var etiquetas = data.labels || [];
+        if (rango) {
+            if (etiquetas.length) {
+                rango.textContent = etiquetas[0] + ' a ' + etiquetas[etiquetas.length - 1];
+            } else {
+                rango.textContent = 'Sin períodos con enrol1';
+            }
+        }
+        chartEspeciales = destruirChart(chartEspeciales);
+        var lista = data.datasets || [];
+        var datasets = [];
+        var i;
+        for (i = 0; i < lista.length; i++) {
+            datasets.push({
+                label: lista[i].label,
+                data: lista[i].data,
+                borderColor: paleta[i % paleta.length],
+                backgroundColor: paleta[i % paleta.length],
+                tension: 0.25,
+                pointRadius: 3,
+                fill: false
+            });
+        }
+        chartEspeciales = new Chart(document.getElementById('chartEvolucionEspeciales'), {
+            type: 'line',
+            data: { labels: etiquetas, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grace: '10%',
+                        ticks: { callback: function (v) { return fmtEntero(v); } }
+                    }
+                }
+            }
+        });
+        pintarCaja('insightDinamico_evolucionEspeciales', data.lineas || []);
+    }
+
+    document.getElementById('btnVerEvolucionEspeciales').addEventListener('click', function () {
+        Swal.fire({
+            title: 'Evolución de programas',
+            text: 'Leyendo las marcas enrol1 del padrón histórico...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+        var cuerpo = 'obrasoc=' + encodeURIComponent(document.getElementById('filtroObra').value)
+            + '&csrf_token=' + encodeURIComponent(document.getElementById('csrfPadron').value)
+            + '&limite=12';
+        pedirJson('index.php?c=dashboard&a=ajaxGetEvolucionEspeciales', cuerpo).then(function (data) {
+            Swal.close();
+            if (!data || data.status !== 'success') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'No se pudo calcular',
+                    text: (data && data.message) ? data.message : 'No se pudo contactar al servidor.',
+                    confirmButtonColor: '#1565c0'
+                });
+                return;
+            }
+            abrirEvolucionEspeciales();
+            dibujarEvolucionEspeciales(data);
+            if (data.message) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Sin serie histórica',
+                    text: data.message,
+                    confirmButtonColor: '#1565c0'
+                });
+            }
+        }).catch(function () {
+            Swal.close();
+            Swal.fire({
+                icon: 'error',
+                title: 'Sin respuesta',
+                text: 'No se pudo contactar al servidor.',
+                confirmButtonColor: '#1565c0'
+            });
+        });
+    });
+
+    document.getElementById('cerrarEvolucionEspeciales').addEventListener('click', cerrarEvolucionEspeciales);
+    document.getElementById('modalEvolucionEspeciales').addEventListener('click', function (e) {
+        if (e.target === document.getElementById('modalEvolucionEspeciales')) {
+            cerrarEvolucionEspeciales();
+        }
     });
 
     document.getElementById('btnProfundizarIa').addEventListener('click', function () {
