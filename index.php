@@ -18,7 +18,7 @@ ini_set('display_errors', '0');
 $hostActual = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
 $esLocal = ($hostActual === 'localhost' || $hostActual === '127.0.0.1' || $hostActual === '::1' || strpos($hostActual, 'localhost:') === 0);
 $accionPedida = isset($_GET['a']) ? strtolower((string) $_GET['a']) : '';
-$esAjax = ($accionPedida === 'ajaxlogin' || $accionPedida === 'ajaxgetevoluciondata');
+$esAjax = ($accionPedida === 'ajaxlogin' || $accionPedida === 'ajaxgetevoluciondata' || $accionPedida === 'ajaxgetdemografiayplanes');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -88,6 +88,7 @@ $mapa = array(
             'index' => true,
             'evolucionPadrones' => true,
             'ajaxGetEvolucionData' => true,
+            'ajaxGetDemografiaYPlanes' => true,
             'administradores' => true,
         ),
         'publico'  => array(),

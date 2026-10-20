@@ -195,6 +195,20 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
     </article>
 </section>
 
+<div class="mb-4 flex flex-wrap gap-2" id="solapasPadron" role="tablist">
+    <button type="button" id="tab-temporal" data-solapa="temporal" class="inline-flex items-center gap-2 rounded-full bg-[#1565c0] px-4 py-2 text-sm font-semibold text-white">
+        <i class="fa-solid fa-chart-line"></i> Evolución temporal
+    </button>
+    <button type="button" id="tab-demografia" data-solapa="demografia" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600">
+        <i class="fa-solid fa-people-group"></i> Demografía
+    </button>
+    <button type="button" id="tab-planes" data-solapa="planes" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600">
+        <i class="fa-solid fa-map-location-dot"></i> Planes y geografía
+    </button>
+</div>
+<p class="mb-4 text-xs text-slate-400">Demografía y planes usan el último corte activo de la obra elegida. El rango de años aplica solo a la evolución temporal.</p>
+
+<div id="solapa-temporal">
 <section class="mb-4 rounded-2xl bg-white p-4 shadow-sm">
     <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
         <i class="fa-solid fa-chart-line text-[#1565c0]"></i>
@@ -303,6 +317,95 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         </table>
     </div>
 </section>
+</div>
+
+<div id="solapa-demografia" class="hidden">
+    <p id="leyendaCorteDemo" class="mb-3 text-xs font-semibold text-slate-500">El corte se calcula al actualizar el filtro.</p>
+    <div class="mb-4 grid gap-4 lg:grid-cols-2">
+        <section class="rounded-2xl bg-white p-4 shadow-sm">
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <i class="fa-solid fa-circle-half-stroke text-[#1565c0]"></i>
+                Titulares y adherentes
+            </div>
+            <div class="relative h-72">
+                <canvas id="graficoFamiliar"></canvas>
+            </div>
+            <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                    Análisis del Indicador y Diagnóstico
+                </div>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_familiar">Separa titulares y adherentes según CODADH. El código 00, 000 o vacío corresponde al titular; cualquier otro valor es adherente.</p>
+                <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_familiar">
+                    <p>El diagnóstico se calcula al actualizar el filtro.</p>
+                </div>
+            </div>
+        </section>
+        <section class="rounded-2xl bg-white p-4 shadow-sm">
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <i class="fa-solid fa-chart-bar text-[#1565c0]"></i>
+                Pirámide por edad y sexo
+            </div>
+            <div class="relative h-72">
+                <canvas id="graficoEtario"></canvas>
+            </div>
+            <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                    Análisis del Indicador y Diagnóstico
+                </div>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_etario">Distribuye la cartera por edad al cierre del período y por sexo. Los rangos son pediátrico, jóvenes, adultos, adultos mayores y pasivos.</p>
+                <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_etario">
+                    <p>El diagnóstico se calcula al actualizar el filtro.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div id="solapa-planes" class="hidden">
+    <p id="leyendaCortePlanes" class="mb-3 text-xs font-semibold text-slate-500">El corte se calcula al actualizar el filtro.</p>
+    <div class="mb-4 grid gap-4 lg:grid-cols-2">
+        <section class="rounded-2xl bg-white p-4 shadow-sm">
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <i class="fa-solid fa-chart-pie text-[#1565c0]"></i>
+                Mix de planes
+            </div>
+            <div class="relative h-72">
+                <canvas id="graficoPlanes"></canvas>
+            </div>
+            <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                    Análisis del Indicador y Diagnóstico
+                </div>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_planes">Participación de cada plan de cobertura dentro del corte activo.</p>
+                <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_planes">
+                    <p>El diagnóstico se calcula al actualizar el filtro.</p>
+                </div>
+            </div>
+        </section>
+        <section class="rounded-2xl bg-white p-4 shadow-sm">
+            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <i class="fa-solid fa-location-dot text-[#1565c0]"></i>
+                <span id="tituloLocalidades">Top 10 localidades</span>
+            </div>
+            <div class="relative h-96">
+                <canvas id="graficoLocalidades"></canvas>
+            </div>
+            <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                    Análisis del Indicador y Diagnóstico
+                </div>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_localidades">Concentración geográfica de los afiliados del corte. Si LOCALIDAD no está informada, el gráfico usa el código postal.</p>
+                <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_localidades">
+                    <p>El diagnóstico se calcula al actualizar el filtro.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
 
 <div id="modalDetalle" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/45 p-4">
     <div class="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -502,8 +605,14 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
     var chartInteranual = null;
     var chartHistorico = null;
     var chartMovimiento = null;
+    var chartFamiliar = null;
+    var chartEtario = null;
+    var chartPlanes = null;
+    var chartLocalidades = null;
     var tabla = null;
     var contextoDiagnosticoIa = '';
+    var datosDemografia = null;
+    var solapaActiva = 'temporal';
     var paleta = ['#1565c0', '#ef6c00', '#2e7d32', '#6a1b9a', '#c62828', '#00838f', '#5d4037', '#1565c0'];
 
     function fmtEntero(valor) {
@@ -995,6 +1104,204 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         modal.classList.remove('flex');
     }
 
+    function destruirChart(grafico) {
+        if (grafico) {
+            grafico.destroy();
+        }
+        return null;
+    }
+
+    function textoCorte(corte) {
+        if (!corte || !corte.disponible) {
+            return 'Sin corte activo para la obra elegida.';
+        }
+        var obra = corte.obra ? corte.obra : 'todas las obras del corte activo';
+        return 'Corte ' + corte.periodo + ' · ' + obra + ' · ' + fmtEntero(corte.total) + ' afiliados';
+    }
+
+    function dibujarFamiliar(bloque) {
+        chartFamiliar = destruirChart(chartFamiliar);
+        chartFamiliar = new Chart(document.getElementById('graficoFamiliar'), {
+            type: 'doughnut',
+            data: {
+                labels: bloque.labels || [],
+                datasets: [{
+                    data: bloque.data || [],
+                    backgroundColor: ['#1565c0', '#ef6c00'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '58%',
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+
+    function dibujarEtario(bloque) {
+        chartEtario = destruirChart(chartEtario);
+        var colores = { M: '#1565c0', F: '#c2185b', O: '#7b1fa2' };
+        var datasets = [];
+        var series = bloque.series || [];
+        var i;
+        for (i = 0; i < series.length; i++) {
+            var suma = 0;
+            var j;
+            var valores = series[i].data || [];
+            for (j = 0; j < valores.length; j++) {
+                suma += Number(valores[j]) || 0;
+            }
+            if (series[i].sexo === 'O' && suma === 0) {
+                continue;
+            }
+            datasets.push({
+                label: series[i].label,
+                data: valores,
+                backgroundColor: colores[series[i].sexo] || '#64748b'
+            });
+        }
+        chartEtario = new Chart(document.getElementById('graficoEtario'), {
+            type: 'bar',
+            data: { labels: bloque.labels || [], datasets: datasets },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { x: { beginAtZero: true, grace: '10%', ticks: { callback: function (v) { return fmtEntero(v); } } } }
+            }
+        });
+    }
+
+    function dibujarPlanes(bloque) {
+        chartPlanes = destruirChart(chartPlanes);
+        var colores = [];
+        var i;
+        var datos = bloque.data || [];
+        for (i = 0; i < datos.length; i++) {
+            colores.push(paleta[i % paleta.length]);
+        }
+        chartPlanes = new Chart(document.getElementById('graficoPlanes'), {
+            type: 'doughnut',
+            data: {
+                labels: bloque.labels || [],
+                datasets: [{ data: datos, backgroundColor: colores, borderWidth: 0 }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '58%',
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+
+    function dibujarLocalidades(bloque) {
+        chartLocalidades = destruirChart(chartLocalidades);
+        var titulo = document.getElementById('tituloLocalidades');
+        if (titulo) {
+            titulo.textContent = bloque.titulo || 'Top 10 localidades';
+        }
+        chartLocalidades = new Chart(document.getElementById('graficoLocalidades'), {
+            type: 'bar',
+            data: {
+                labels: bloque.labels || [],
+                datasets: [{
+                    label: 'Afiliados',
+                    data: bloque.data || [],
+                    backgroundColor: '#1565c0'
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { x: { beginAtZero: true, grace: '10%', ticks: { callback: function (v) { return fmtEntero(v); } } } }
+            }
+        });
+    }
+
+    function dibujarEtapa2(data) {
+        if (!data) {
+            return;
+        }
+        var leyenda = textoCorte(data.corte || {});
+        var nodoDemo = document.getElementById('leyendaCorteDemo');
+        var nodoPlanes = document.getElementById('leyendaCortePlanes');
+        if (nodoDemo) {
+            nodoDemo.textContent = leyenda;
+        }
+        if (nodoPlanes) {
+            nodoPlanes.textContent = leyenda;
+        }
+        dibujarFamiliar(data.familiar || { labels: [], data: [] });
+        dibujarEtario(data.etario || { labels: [], series: [] });
+        dibujarPlanes(data.planes || { labels: [], data: [] });
+        dibujarLocalidades(data.localidades || { labels: [], data: [], titulo: 'Top 10 localidades' });
+        pintarCaja('insightDinamico_familiar', (data.familiar || {}).lineas);
+        pintarCaja('insightDinamico_etario', (data.etario || {}).lineas);
+        pintarCaja('insightDinamico_planes', (data.planes || {}).lineas);
+        pintarCaja('insightDinamico_localidades', (data.localidades || {}).lineas);
+    }
+
+    function claseSolapa(activa) {
+        if (activa) {
+            return 'inline-flex items-center gap-2 rounded-full bg-[#1565c0] px-4 py-2 text-sm font-semibold text-white';
+        }
+        return 'inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600';
+    }
+
+    function mostrarSolapa(nombre) {
+        solapaActiva = nombre;
+        var ids = ['temporal', 'demografia', 'planes'];
+        var i;
+        for (i = 0; i < ids.length; i++) {
+            var panel = document.getElementById('solapa-' + ids[i]);
+            var boton = document.getElementById('tab-' + ids[i]);
+            if (!panel || !boton) {
+                continue;
+            }
+            if (ids[i] === nombre) {
+                panel.classList.remove('hidden');
+                boton.className = claseSolapa(true);
+            } else {
+                panel.classList.add('hidden');
+                boton.className = claseSolapa(false);
+            }
+        }
+        if (nombre === 'temporal') {
+            if (chartInteranual) { chartInteranual.resize(); }
+            if (chartHistorico) { chartHistorico.resize(); }
+            if (chartMovimiento) { chartMovimiento.resize(); }
+            if (tabla) { tabla.columns.adjust(); }
+            return;
+        }
+        dibujarEtapa2(datosDemografia);
+    }
+
+    function pedirJson(url, cuerpo) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: cuerpo,
+            credentials: 'same-origin'
+        }).then(function (respuesta) {
+            return respuesta.text().then(function (texto) {
+                try {
+                    return JSON.parse(texto);
+                } catch (e) {
+                    return null;
+                }
+            });
+        });
+    }
+
     function aniosElegidos() {
         var select = document.getElementById('filtroAnios');
         var elegidos = [];
@@ -1031,37 +1338,27 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         if (mostrarAviso) {
             Swal.fire({
                 title: 'Actualizando padrón',
-                text: 'Calculando cortes y variaciones...',
+                text: 'Calculando cortes, demografía y planes...',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 didOpen: function () { Swal.showLoading(); }
             });
         }
 
-        var cuerpo = 'obrasoc=' + encodeURIComponent(document.getElementById('filtroObra').value)
+        var cuerpoBase = 'obrasoc=' + encodeURIComponent(document.getElementById('filtroObra').value)
             + '&csrf_token=' + encodeURIComponent(document.getElementById('csrfPadron').value);
+        var cuerpo = cuerpoBase;
         var i;
         for (i = 0; i < anios.length; i++) {
             cuerpo += '&anios[]=' + encodeURIComponent(anios[i]);
         }
 
-        fetch('index.php?c=dashboard&a=ajaxGetEvolucionData', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: cuerpo,
-            credentials: 'same-origin'
-        }).then(function (respuesta) {
-            return respuesta.text().then(function (texto) {
-                try {
-                    return JSON.parse(texto);
-                } catch (e) {
-                    return null;
-                }
-            });
-        }).then(function (data) {
+        Promise.all([
+            pedirJson('index.php?c=dashboard&a=ajaxGetEvolucionData', cuerpo),
+            pedirJson('index.php?c=dashboard&a=ajaxGetDemografiaYPlanes', cuerpoBase)
+        ]).then(function (resultados) {
+            var data = resultados[0];
+            datosDemografia = resultados[1];
             if (mostrarAviso) {
                 Swal.close();
             }
@@ -1081,6 +1378,9 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             dibujarTabla(data.tabla || []);
             diagnosticarMovimiento(data.movimiento || { labels: [], totales: [], altas: [], bajas: [], variacion_pct: [] }, data.tabla || []);
             pintarInsights(data.insights || {});
+            if (solapaActiva !== 'temporal') {
+                dibujarEtapa2(datosDemografia);
+            }
             if (data.message) {
                 Swal.fire({
                     icon: 'info',
@@ -1101,6 +1401,14 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             });
         });
     }
+
+    document.getElementById('solapasPadron').addEventListener('click', function (e) {
+        var boton = e.target.closest ? e.target.closest('button[data-solapa]') : null;
+        if (!boton) {
+            return;
+        }
+        mostrarSolapa(boton.getAttribute('data-solapa'));
+    });
 
     document.getElementById('formEvolucion').addEventListener('submit', function (e) {
         e.preventDefault();

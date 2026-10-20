@@ -26,18 +26,40 @@ class PadronModel
         $this->db = getDBConnection();
     }
 
+    /**
+     * Obras vigentes de cartilla.obrasoc para el filtro.
+     * Vigente: TAFECHAFIN posterior a hoy, nula, o fecha cero de FoxPro
+     * (1899-12-30 y cualquier valor hasta 1900-01-01).
+     * De las variantes OSSEG solo queda OSSEG U.
+     */
     public function getObrasSociales()
     {
-        $vistos = array();
-        $lista = array();
+        $sql = "SELECT DISTINCT TRIM(o.TACODIGO) AS obrasoc, TRIM(o.TADESCRIP) AS nombre
+                  FROM cartilla.obrasoc o
+                 WHERE (o.TAFECHAFIN > CURDATE()
+                        OR o.TAFECHAFIN IS NULL
+                        OR o.TAFECHAFIN <= '1900-01-01')
+                   AND TRIM(o.TACODIGO) NOT IN ('OSSEG S', 'OSSEG E', 'OSSEG B', 'OSSEGB21')
+                   AND o.TACODIGO IS NOT NULL
+                   AND TRIM(o.TACODIGO) <> ''
+                 ORDER BY nombre ASC";
 
-        foreach ($this->leerCortes() as $fila) {
-            $codigo = $fila['obrasoc'];
-            if (isset($vistos[$codigo])) {
+        $stmt = $this->db->query($sql);
+        $filas = $stmt->fetchAll();
+        $lista = array();
+        $vistos = array();
+
+        if (!is_array($filas)) {
+            return $lista;
+        }
+
+        foreach ($filas as $fila) {
+            $codigo = strtoupper(trim((string) $fila['obrasoc']));
+            if ($codigo === '' || isset($vistos[$codigo])) {
                 continue;
             }
             $vistos[$codigo] = true;
-            $nombre = $this->nombreObra($codigo);
+            $nombre = trim((string) $fila['nombre']);
             $etiqueta = $codigo;
             if ($nombre !== '') {
                 $etiqueta .= ' — ' . $nombre;
@@ -49,7 +71,6 @@ class PadronModel
             );
         }
 
-        usort($lista, array($this, 'compararCodigo'));
         return $lista;
     }
 
@@ -946,6 +967,512 @@ class PadronModel
             return '-' . $texto;
         }
         return '0,0 %';
+    }
+
+    /**
+     * Demografía, planes y zona del último corte activo (padron_activos).
+     */
+    public function getDemografiaYPlanes($obrasoc)
+    {
+        $corte = $this->resolverCorteActivo($obrasoc);
+        if (empty($corte['disponible'])) {
+            $aviso = array('El corte activo no tiene afiliados cargados para esta obra social.');
+            return array(
+                'status'       => 'success',
+                'message'      => 'El corte activo no tiene el detalle demográfico de esta obra social.',
+                'corte'        => $corte,
+                'familiar'     => $this->respuestaFamiliarVacia($aviso),
+                'etario'       => $this->respuestaEtariaVacia($aviso),
+                'planes'       => $this->respuestaPlanesVacia($aviso),
+                'localidades'  => $this->respuestaLocalidadesVacia($aviso),
+            );
+        }
+
+        $periodo = $corte['periodo'];
+        return array(
+            'status'      => 'success',
+            'message'     => '',
+            'corte'       => $corte,
+            'familiar'    => $this->getDistribucionFamiliar($obrasoc, $periodo),
+            'etario'      => $this->getDistribucionEtariaYSexo($obrasoc, $periodo),
+            'planes'      => $this->getMixPlanes($obrasoc, $periodo),
+            'localidades' => $this->getTopLocalidades($obrasoc, $periodo),
+        );
+    }
+
+    public function getDistribucionFamiliar($obrasoc, $periodo)
+    {
+        $corte = $this->asegurarCorte($obrasoc, $periodo);
+        if (empty($corte['disponible'])) {
+            return $this->respuestaFamiliarVacia(array('El corte activo no tiene afiliados cargados para esta obra social.'));
+        }
+
+        $filtro = $this->filtroCorteActivo($obrasoc, $corte['periodo']);
+        $sql = "SELECT CASE
+                         WHEN CODADH IS NULL OR TRIM(CODADH) = '' OR TRIM(CODADH) IN ('00', '000') THEN 'Titulares'
+                         ELSE 'Adherentes'
+                       END AS grupo,
+                       COUNT(*) AS cantidad
+                  FROM vfpmedicos.padron_activos"
+             . $filtro['sql']
+             . " GROUP BY grupo";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($filtro['params']);
+        $filas = $stmt->fetchAll();
+
+        $titulares = 0;
+        $adherentes = 0;
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                if ($fila['grupo'] === 'Adherentes') {
+                    $adherentes = (int) $fila['cantidad'];
+                } else {
+                    $titulares = (int) $fila['cantidad'];
+                }
+            }
+        }
+
+        $total = $titulares + $adherentes;
+        $ratio = null;
+        if ($titulares > 0) {
+            $ratio = round($adherentes / $titulares, 2);
+        }
+
+        $lineas = array();
+        if ($titulares === 0 && $adherentes === 0) {
+            $lineas[] = 'El corte ' . $corte['periodo'] . ' no tiene afiliados para medir la carga familiar.';
+        } elseif ($titulares === 0) {
+            $lineas[] = 'No hay titulares en el corte ' . $corte['periodo'] . '. Los ' . $this->formatoEntero($adherentes) . ' afiliados son adherentes.';
+        } else {
+            $lineas[] = 'Hay ' . $this->formatoRatio($ratio) . ' adherentes por cada titular ('
+                . $this->formatoEntero($adherentes) . ' adherentes y '
+                . $this->formatoEntero($titulares) . ' titulares en ' . $corte['periodo'] . ').';
+        }
+        if ($total > 0) {
+            $pctAdh = round(($adherentes / $total) * 100, 1);
+            $lineas[] = 'Los adherentes representan el ' . $this->formatoPorcentaje($pctAdh) . ' del corte.';
+        }
+
+        return array(
+            'labels'     => array('Titulares', 'Adherentes'),
+            'data'       => array($titulares, $adherentes),
+            'titulares'  => $titulares,
+            'adherentes' => $adherentes,
+            'ratio'      => $ratio,
+            'lineas'     => $lineas,
+        );
+    }
+
+    public function getDistribucionEtariaYSexo($obrasoc, $periodo)
+    {
+        $corte = $this->asegurarCorte($obrasoc, $periodo);
+        $rangos = $this->rangosEtarios();
+        if (empty($corte['disponible'])) {
+            return $this->respuestaEtariaVacia(array('El corte activo no tiene afiliados cargados para esta obra social.'));
+        }
+
+        $filtro = $this->filtroCorteActivo($obrasoc, $corte['periodo']);
+        $fechaCorte = $this->fechaCorteDesdePeriodo($corte['periodo']);
+        $params = $filtro['params'];
+        $params[':corte'] = $fechaCorte;
+
+        $sql = "SELECT rango, sexo, COUNT(*) AS cantidad
+                  FROM (
+                        SELECT CASE
+                                 WHEN edad IS NULL OR edad < 0 THEN 'Sin edad'
+                                 WHEN edad <= 14 THEN '0-14 (Pediátrico)'
+                                 WHEN edad <= 30 THEN '15-30 (Jóvenes)'
+                                 WHEN edad <= 50 THEN '31-50 (Adultos)'
+                                 WHEN edad <= 64 THEN '51-64 (Adultos Mayores)'
+                                 ELSE '65+ (Pasivos)'
+                               END AS rango,
+                               CASE
+                                 WHEN UPPER(TRIM(sexo_raw)) IN ('M', 'MASCULINO', 'H', 'V', '1') THEN 'M'
+                                 WHEN UPPER(TRIM(sexo_raw)) IN ('F', 'FEMENINO', '2') THEN 'F'
+                                 ELSE 'O'
+                               END AS sexo
+                          FROM (
+                                SELECT TIMESTAMPDIFF(YEAR, FECNACIM, :corte) AS edad,
+                                       SEXO AS sexo_raw
+                                  FROM vfpmedicos.padron_activos"
+                     . $filtro['sql']
+                     . "          ) base
+                       ) clasificado
+                 GROUP BY rango, sexo";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $filas = $stmt->fetchAll();
+
+        $matriz = array();
+        foreach ($rangos as $rango) {
+            $matriz[$rango] = array('M' => 0, 'F' => 0, 'O' => 0);
+        }
+        $sinEdad = 0;
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $rango = (string) $fila['rango'];
+                $sexo = (string) $fila['sexo'];
+                $cantidad = (int) $fila['cantidad'];
+                if ($rango === 'Sin edad') {
+                    $sinEdad += $cantidad;
+                    continue;
+                }
+                if (!isset($matriz[$rango])) {
+                    continue;
+                }
+                if (!isset($matriz[$rango][$sexo])) {
+                    $sexo = 'O';
+                }
+                $matriz[$rango][$sexo] += $cantidad;
+            }
+        }
+
+        $serieM = array();
+        $serieF = array();
+        $serieO = array();
+        $mayorRango = '';
+        $mayorCantidad = -1;
+        $total = $sinEdad;
+        foreach ($rangos as $rango) {
+            $hombres = (int) $matriz[$rango]['M'];
+            $mujeres = (int) $matriz[$rango]['F'];
+            $otros = (int) $matriz[$rango]['O'];
+            $serieM[] = $hombres;
+            $serieF[] = $mujeres;
+            $serieO[] = $otros;
+            $suma = $hombres + $mujeres + $otros;
+            $total += $suma;
+            if ($suma > $mayorCantidad) {
+                $mayorCantidad = $suma;
+                $mayorRango = $rango;
+            }
+        }
+
+        $lineas = array();
+        if ($total === 0 || $mayorCantidad < 0) {
+            $lineas[] = 'No hay edades para diagnosticar en el corte ' . $corte['periodo'] . '.';
+        } else {
+            $pct = round(($mayorCantidad / $total) * 100, 1);
+            $lineas[] = 'El rango etario mayoritario es ' . $mayorRango . ', con '
+                . $this->formatoEntero($mayorCantidad) . ' afiliados ('
+                . $this->formatoPorcentaje($pct) . ' del corte ' . $corte['periodo'] . ').';
+        }
+        if ($sinEdad > 0) {
+            $lineas[] = $this->formatoEntero($sinEdad) . ' afiliados quedaron sin edad válida a partir de FECNACIM.';
+        }
+
+        return array(
+            'labels' => $rangos,
+            'series' => array(
+                array('sexo' => 'M', 'label' => 'Masculino', 'data' => $serieM),
+                array('sexo' => 'F', 'label' => 'Femenino', 'data' => $serieF),
+                array('sexo' => 'O', 'label' => 'Otros', 'data' => $serieO),
+            ),
+            'mayoritario' => array(
+                'rango'    => $mayorRango,
+                'cantidad' => $mayorCantidad < 0 ? 0 : $mayorCantidad,
+            ),
+            'lineas' => $lineas,
+        );
+    }
+
+    public function getMixPlanes($obrasoc, $periodo)
+    {
+        $corte = $this->asegurarCorte($obrasoc, $periodo);
+        if (empty($corte['disponible'])) {
+            return $this->respuestaPlanesVacia(array('El corte activo no tiene afiliados cargados para esta obra social.'));
+        }
+
+        $filtro = $this->filtroCorteActivo($obrasoc, $corte['periodo']);
+        $sql = "SELECT CASE
+                         WHEN PLAN IS NULL OR TRIM(PLAN) = '' THEN 'Sin plan'
+                         ELSE TRIM(PLAN)
+                       END AS plan,
+                       COUNT(*) AS cantidad
+                  FROM vfpmedicos.padron_activos"
+             . $filtro['sql']
+             . " GROUP BY plan
+                 ORDER BY cantidad DESC";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($filtro['params']);
+        $filas = $stmt->fetchAll();
+
+        $labels = array();
+        $data = array();
+        $total = 0;
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $cantidad = (int) $fila['cantidad'];
+                $labels[] = (string) $fila['plan'];
+                $data[] = $cantidad;
+                $total += $cantidad;
+            }
+        }
+
+        $lineas = array();
+        if ($total === 0 || count($labels) === 0) {
+            $lineas[] = 'El corte ' . $corte['periodo'] . ' no tiene planes para concentrar.';
+            $principal = array('plan' => '', 'cantidad' => 0, 'porcentaje' => 0);
+        } else {
+            $pct = round(($data[0] / $total) * 100, 1);
+            $principal = array(
+                'plan'        => $labels[0],
+                'cantidad'    => $data[0],
+                'porcentaje'  => $pct,
+            );
+            $lineas[] = 'El plan ' . $labels[0] . ' concentra ' . $this->formatoEntero($data[0])
+                . ' afiliados y representa el ' . $this->formatoPorcentaje($pct)
+                . ' del padrón del corte ' . $corte['periodo'] . '.';
+        }
+
+        return array(
+            'labels'     => $labels,
+            'data'       => $data,
+            'principal'  => $principal,
+            'lineas'     => $lineas,
+        );
+    }
+
+    public function getTopLocalidades($obrasoc, $periodo)
+    {
+        $corte = $this->asegurarCorte($obrasoc, $periodo);
+        if (empty($corte['disponible'])) {
+            return $this->respuestaLocalidadesVacia(array('El corte activo no tiene afiliados cargados para esta obra social.'));
+        }
+
+        $filtro = $this->filtroCorteActivo($obrasoc, $corte['periodo']);
+        $sql = "SELECT CASE
+                         WHEN LOCALIDAD IS NULL OR TRIM(LOCALIDAD) = '' THEN ''
+                         ELSE TRIM(LOCALIDAD)
+                       END AS zona,
+                       COUNT(*) AS cantidad
+                  FROM vfpmedicos.padron_activos"
+             . $filtro['sql']
+             . " GROUP BY zona
+                 ORDER BY cantidad DESC
+                 LIMIT 10";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($filtro['params']);
+        $filas = $stmt->fetchAll();
+
+        $campo = 'LOCALIDAD';
+        $titulo = 'Top 10 localidades';
+        $conDato = false;
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                if (trim((string) $fila['zona']) !== '') {
+                    $conDato = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$conDato) {
+            $campo = 'CODPOS';
+            $titulo = 'Top 10 códigos postales';
+            $sql = "SELECT CASE
+                             WHEN CODPOS IS NULL OR TRIM(CODPOS) = '' THEN 'Sin código'
+                             ELSE TRIM(CODPOS)
+                           END AS zona,
+                           COUNT(*) AS cantidad
+                      FROM vfpmedicos.padron_activos"
+                 . $filtro['sql']
+                 . " GROUP BY zona
+                     ORDER BY cantidad DESC
+                     LIMIT 10";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($filtro['params']);
+            $filas = $stmt->fetchAll();
+        }
+
+        $labels = array();
+        $data = array();
+        $totalZona = 0;
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $etiqueta = trim((string) $fila['zona']);
+                if ($etiqueta === '') {
+                    $etiqueta = 'Sin localidad';
+                }
+                $cantidad = (int) $fila['cantidad'];
+                $labels[] = $etiqueta;
+                $data[] = $cantidad;
+                $totalZona += $cantidad;
+            }
+        }
+
+        $totalCorte = (int) $corte['total'];
+        $lineas = array();
+        if (count($labels) === 0 || $totalCorte === 0) {
+            $lineas[] = 'El corte ' . $corte['periodo'] . ' no tiene zona para rankear.';
+        } elseif ($campo === 'CODPOS') {
+            $pct = round(($data[0] / $totalCorte) * 100, 1);
+            $lineas[] = 'El corte ' . $corte['periodo'] . ' no informa LOCALIDAD. La concentración geográfica se lee por código postal: '
+                . $labels[0] . ' reúne ' . $this->formatoEntero($data[0]) . ' afiliados ('
+                . $this->formatoPorcentaje($pct) . ').';
+        } else {
+            $pct = round(($data[0] / $totalCorte) * 100, 1);
+            $lineas[] = 'La localidad con más afiliados es ' . $labels[0] . ', con '
+                . $this->formatoEntero($data[0]) . ' afiliados ('
+                . $this->formatoPorcentaje($pct) . ' del corte ' . $corte['periodo'] . ').';
+        }
+
+        return array(
+            'titulo' => $titulo,
+            'campo'  => $campo,
+            'labels' => $labels,
+            'data'   => $data,
+            'lineas' => $lineas,
+        );
+    }
+
+    private function resolverCorteActivo($obrasoc)
+    {
+        $obra = strtoupper(trim((string) $obrasoc));
+        $where = '';
+        $params = array();
+        if ($obra !== '') {
+            $where = ' WHERE UPPER(TRIM(OBRASOC)) = :obra ';
+            $params[':obra'] = $obra;
+        }
+
+        $sql = "SELECT COUNT(*) AS total, TRIM(PERIODO) AS periodo
+                  FROM vfpmedicos.padron_activos"
+             . $where
+             . " GROUP BY TRIM(PERIODO)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $cortes = $stmt->fetchAll();
+
+        $total = 0;
+        $periodo = '';
+        $orden = 0;
+        if (is_array($cortes)) {
+            foreach ($cortes as $corte) {
+                $clave = $this->ordenPeriodo(isset($corte['periodo']) ? $corte['periodo'] : '');
+                if ($clave >= $orden) {
+                    $orden = $clave;
+                    $total = (int) $corte['total'];
+                    $periodo = trim((string) $corte['periodo']);
+                }
+            }
+        }
+
+        return array(
+            'disponible' => $total > 0,
+            'periodo'    => $periodo,
+            'total'      => $total,
+            'fuente'     => 'padron_activos',
+            'obra'       => $obra,
+        );
+    }
+
+    private function asegurarCorte($obrasoc, $periodo)
+    {
+        $corte = $this->resolverCorteActivo($obrasoc);
+        $periodo = trim((string) $periodo);
+        if ($periodo !== '' && !empty($corte['disponible'])) {
+            $corte['periodo'] = $periodo;
+        }
+        return $corte;
+    }
+
+    private function filtroCorteActivo($obrasoc, $periodo)
+    {
+        $sql = ' WHERE TRIM(PERIODO) = :periodo ';
+        $params = array(':periodo' => trim((string) $periodo));
+        $obra = strtoupper(trim((string) $obrasoc));
+        if ($obra !== '') {
+            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra ';
+            $params[':obra'] = $obra;
+        }
+        return array('sql' => $sql, 'params' => $params);
+    }
+
+    private function fechaCorteDesdePeriodo($periodo)
+    {
+        $periodo = trim((string) $periodo);
+        if (!preg_match('/^(\d{2})\/(\d{2})$/', $periodo, $partes)) {
+            return date('Y-m-d');
+        }
+        $anio = 2000 + (int) $partes[1];
+        $mes = (int) $partes[2];
+        if ($mes < 1 || $mes > 12) {
+            return date('Y-m-d');
+        }
+        return date('Y-m-t', strtotime(sprintf('%04d-%02d-01', $anio, $mes)));
+    }
+
+    private function rangosEtarios()
+    {
+        return array(
+            '0-14 (Pediátrico)',
+            '15-30 (Jóvenes)',
+            '31-50 (Adultos)',
+            '51-64 (Adultos Mayores)',
+            '65+ (Pasivos)',
+        );
+    }
+
+    private function formatoRatio($ratio)
+    {
+        $ratio = (float) $ratio;
+        if (abs($ratio - round($ratio)) < 0.001) {
+            return $this->formatoEntero($ratio);
+        }
+        return number_format($ratio, 2, ',', '.');
+    }
+
+    private function respuestaFamiliarVacia($lineas)
+    {
+        return array(
+            'labels'     => array('Titulares', 'Adherentes'),
+            'data'       => array(0, 0),
+            'titulares'  => 0,
+            'adherentes' => 0,
+            'ratio'      => null,
+            'lineas'     => $lineas,
+        );
+    }
+
+    private function respuestaEtariaVacia($lineas)
+    {
+        $ceros = array(0, 0, 0, 0, 0);
+        return array(
+            'labels' => $this->rangosEtarios(),
+            'series' => array(
+                array('sexo' => 'M', 'label' => 'Masculino', 'data' => $ceros),
+                array('sexo' => 'F', 'label' => 'Femenino', 'data' => $ceros),
+                array('sexo' => 'O', 'label' => 'Otros', 'data' => $ceros),
+            ),
+            'mayoritario' => array('rango' => '', 'cantidad' => 0),
+            'lineas' => $lineas,
+        );
+    }
+
+    private function respuestaPlanesVacia($lineas)
+    {
+        return array(
+            'labels'    => array(),
+            'data'      => array(),
+            'principal' => array('plan' => '', 'cantidad' => 0, 'porcentaje' => 0),
+            'lineas'    => $lineas,
+        );
+    }
+
+    private function respuestaLocalidadesVacia($lineas)
+    {
+        return array(
+            'titulo' => 'Top 10 localidades',
+            'campo'  => 'LOCALIDAD',
+            'labels' => array(),
+            'data'   => array(),
+            'lineas' => $lineas,
+        );
     }
 
     private function compararCodigo($a, $b)
