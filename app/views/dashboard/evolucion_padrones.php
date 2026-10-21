@@ -13,6 +13,13 @@ $accesos = array(
         'icon'  => 'fa-solid fa-chart-line',
         'texto' => 'Seguimiento del padrón',
     ),
+    array(
+        'id'    => 'auditoria',
+        'label' => 'Auditoría Consumo',
+        'href'  => 'index.php?c=auditoria&a=controlPrestadores',
+        'icon'  => 'fa-solid fa-user-doctor',
+        'texto' => 'Uso de prestaciones',
+    ),
 );
 
 if ($esAdmin) {

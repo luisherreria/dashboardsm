@@ -80,6 +80,11 @@ $esAdmin = ($rolSesion === 'admin');
             <i class="fa-solid fa-chart-line w-6 text-center text-[#1565c0]"></i>
             <span>Evolución de Padrones</span>
         </a>
+        <a href="index.php?c=auditoria&a=controlPrestadores"
+           class="flex items-center gap-3 border-b border-slate-100 px-5 py-3 text-sm hover:bg-blue-50 hover:text-[#0d47a1] <?php echo $menuActivo === 'auditoria' ? 'bg-blue-50 text-[#0d47a1]' : 'text-slate-700'; ?>">
+            <i class="fa-solid fa-user-doctor w-6 text-center text-[#1565c0]"></i>
+            <span>2. Auditoría Consumo Prestacional</span>
+        </a>
         <?php if ($esAdmin): ?>
         <a href="index.php?c=dashboard&a=administradores"
            class="flex items-center gap-3 border-b border-slate-100 px-5 py-3 text-sm hover:bg-blue-50 hover:text-[#0d47a1] <?php echo $menuActivo === 'admin' ? 'bg-blue-50 text-[#0d47a1]' : 'text-slate-700'; ?>">

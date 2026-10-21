@@ -820,14 +820,13 @@ class PadronModel
         $obra = strtoupper(trim((string) $obrasoc));
         $sql = "SELECT TRIM(PERIODO) AS periodo, TRIM(ENROL1) AS marca, COUNT(*) AS total
                   FROM vfpmedicos.t_padron
-                 WHERE ENROL1 IS NOT NULL
-                   AND TRIM(ENROL1) <> ''";
+                 WHERE ENROL1 <> ''";
         $params = array();
         if ($obra !== '') {
-            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
+            $sql .= ' AND OBRASOC = :obra';
             $params[':obra'] = $obra;
         }
-        $sql .= ' GROUP BY TRIM(PERIODO), TRIM(ENROL1)';
+        $sql .= ' GROUP BY PERIODO, ENROL1';
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
@@ -1275,60 +1274,37 @@ class PadronModel
         $pedido = trim((string) $periodo);
         $obra = strtoupper(trim((string) $obrasoc));
 
-        // CODADH se compara siempre como texto: 'ADH' no puede convertirse a 0.
-        $sql = "SELECT TRIM(PERIODO) AS periodo,
-                       SUM(CASE
-                           WHEN UPPER(TRIM(CODADH)) = 'ADH' THEN 1
-                           WHEN TRIM(CODADH) != '' AND CODADH IS NOT NULL AND TRIM(CODADH) NOT IN ('00', '000', '0', 'TIT') THEN 1
-                           ELSE 0
-                       END) AS adherentes,
-                       SUM(CASE
-                           WHEN CODADH IS NULL THEN 1
-                           WHEN TRIM(CODADH) = '' THEN 1
-                           WHEN TRIM(CODADH) IN ('00', '000', '0', 'TIT') THEN 1
-                           ELSE 0
-                       END) AS titulares
-                  FROM vfpmedicos.t_padron
-                 WHERE PERIODO IS NOT NULL
-                   AND TRIM(PERIODO) <> ''";
-        $params = array();
-        if ($obra !== '') {
-            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
-            $params[':obra'] = $obra;
-        }
-        $sql .= ' GROUP BY TRIM(PERIODO)';
-
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        $filas = $stmt->fetchAll();
-
         $elegido = null;
-        $ultimo = null;
-        if (is_array($filas)) {
-            foreach ($filas as $fila) {
-                $clave = trim((string) $this->valorFila($fila, 'periodo'));
-                $titularesFila = (int) $this->valorFila($fila, 'titulares');
-                $adherentesFila = (int) $this->valorFila($fila, 'adherentes');
-                if ($clave === '' || ($titularesFila + $adherentesFila) === 0) {
-                    continue;
-                }
-                $item = array(
-                    'periodo'    => $clave,
-                    'titulares'  => $titularesFila,
-                    'adherentes' => $adherentesFila,
-                    'orden'      => $this->ordenPeriodo($clave),
+        if ($pedido !== '') {
+            $fila = $this->contarFamilia($obra, $pedido);
+            if ($fila['total'] > 0) {
+                $elegido = array(
+                    'periodo'    => $pedido,
+                    'titulares'  => $fila['titulares'],
+                    'adherentes' => $fila['adherentes'],
                 );
-                if ($pedido !== '' && $clave === $pedido) {
-                    $elegido = $item;
-                }
-                if ($ultimo === null || $item['orden'] > $ultimo['orden']) {
-                    $ultimo = $item;
-                }
             }
         }
-
         if ($elegido === null) {
-            $elegido = $ultimo;
+            $ultimoPeriodo = '';
+            $ordenUltimo = -1;
+            foreach ($this->listarPeriodosPadron($obra) as $clave) {
+                $orden = $this->ordenPeriodo($clave);
+                if ($orden > $ordenUltimo) {
+                    $ordenUltimo = $orden;
+                    $ultimoPeriodo = $clave;
+                }
+            }
+            if ($ultimoPeriodo !== '') {
+                $fila = $this->contarFamilia($obra, $ultimoPeriodo);
+                if ($fila['total'] > 0) {
+                    $elegido = array(
+                        'periodo'    => $ultimoPeriodo,
+                        'titulares'  => $fila['titulares'],
+                        'adherentes' => $fila['adherentes'],
+                    );
+                }
+            }
         }
         if ($elegido === null) {
             return $this->respuestaFamiliarVacia(array(
@@ -1372,6 +1348,70 @@ class PadronModel
             'periodo'    => $periodoUsado,
             'lineas'     => $lineas,
         );
+    }
+
+    private function contarFamilia($obra, $periodo)
+    {
+        $sql = "SELECT SUM(CASE
+                           WHEN UPPER(TRIM(CODADH)) = 'ADH' THEN 1
+                           WHEN TRIM(CODADH) != '' AND CODADH IS NOT NULL AND TRIM(CODADH) NOT IN ('00', '000', '0', 'TIT') THEN 1
+                           ELSE 0
+                       END) AS adherentes,
+                       SUM(CASE
+                           WHEN CODADH IS NULL THEN 1
+                           WHEN TRIM(CODADH) = '' THEN 1
+                           WHEN TRIM(CODADH) IN ('00', '000', '0', 'TIT') THEN 1
+                           ELSE 0
+                       END) AS titulares,
+                       COUNT(*) AS total
+                  FROM vfpmedicos.t_padron
+                 WHERE PERIODO = :periodo";
+        $params = array(':periodo' => $periodo);
+        if ($obra !== '') {
+            $sql .= ' AND OBRASOC = :obra';
+            $params[':obra'] = $obra;
+        }
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $fila = $stmt->fetch();
+        if (!is_array($fila)) {
+            return array('titulares' => 0, 'adherentes' => 0, 'total' => 0);
+        }
+
+        return array(
+            'titulares'  => (int) $this->valorFila($fila, 'titulares'),
+            'adherentes' => (int) $this->valorFila($fila, 'adherentes'),
+            'total'      => (int) $this->valorFila($fila, 'total'),
+        );
+    }
+
+    private function listarPeriodosPadron($obra)
+    {
+        $sql = "SELECT TRIM(PERIODO) AS periodo
+                  FROM vfpmedicos.t_padron
+                 WHERE PERIODO <> ''";
+        $params = array();
+        if ($obra !== '') {
+            $sql .= ' AND OBRASOC = :obra';
+            $params[':obra'] = $obra;
+        }
+        $sql .= ' GROUP BY PERIODO';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $filas = $stmt->fetchAll();
+        $lista = array();
+        if (!is_array($filas)) {
+            return $lista;
+        }
+        foreach ($filas as $fila) {
+            $clave = trim((string) $this->valorFila($fila, 'periodo'));
+            if ($clave !== '') {
+                $lista[] = $clave;
+            }
+        }
+        return $lista;
     }
 
     public function getDistribucionEtariaYSexo($obrasoc, $periodo)
@@ -1556,15 +1596,14 @@ class PadronModel
         $obra = strtoupper(trim((string) $obrasoc));
         $sql = "SELECT TRIM(LOCALIDAD) AS localidad, COUNT(*) AS total
                   FROM vfpmedicos.t_padron
-                 WHERE TRIM(PERIODO) = :periodo
-                   AND LOCALIDAD IS NOT NULL
-                   AND TRIM(LOCALIDAD) <> ''";
+                 WHERE PERIODO = :periodo
+                   AND LOCALIDAD <> ''";
         $params = array(':periodo' => $origen['periodo']);
         if ($obra !== '') {
-            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
+            $sql .= ' AND OBRASOC = :obra';
             $params[':obra'] = $obra;
         }
-        $sql .= ' GROUP BY TRIM(LOCALIDAD) ORDER BY total DESC LIMIT 10';
+        $sql .= ' GROUP BY LOCALIDAD ORDER BY total DESC LIMIT 10';
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
@@ -1614,14 +1653,13 @@ class PadronModel
         $obra = strtoupper(trim((string) $obrasoc));
         $sql = "SELECT TRIM(PERIODO) AS periodo, COUNT(*) AS total
                   FROM vfpmedicos.t_padron
-                 WHERE LOCALIDAD IS NOT NULL
-                   AND TRIM(LOCALIDAD) <> ''";
+                 WHERE LOCALIDAD <> ''";
         $params = array();
         if ($obra !== '') {
-            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
+            $sql .= ' AND OBRASOC = :obra';
             $params[':obra'] = $obra;
         }
-        $sql .= ' GROUP BY TRIM(PERIODO)';
+        $sql .= ' GROUP BY PERIODO';
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);

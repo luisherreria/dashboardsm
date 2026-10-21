@@ -18,7 +18,15 @@ ini_set('display_errors', '0');
 $hostActual = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
 $esLocal = ($hostActual === 'localhost' || $hostActual === '127.0.0.1' || $hostActual === '::1' || strpos($hostActual, 'localhost:') === 0);
 $accionPedida = isset($_GET['a']) ? strtolower((string) $_GET['a']) : '';
-$esAjax = ($accionPedida === 'ajaxlogin' || $accionPedida === 'ajaxgetevoluciondata' || $accionPedida === 'ajaxgetdemografiayplanes' || $accionPedida === 'ajaxgetevolucionespeciales');
+$esAjax = ($accionPedida === 'ajaxlogin'
+    || $accionPedida === 'ajaxgetevoluciondata'
+    || $accionPedida === 'ajaxgetdemografiayplanes'
+    || $accionPedida === 'ajaxgetevolucionespeciales'
+    || $accionPedida === 'ajaxgetmaster'
+    || $accionPedida === 'ajaxgetexplosion1'
+    || $accionPedida === 'ajaxgetexplosion2'
+    || $accionPedida === 'ajaxgetficha'
+    || $accionPedida === 'ajaxgethistoriaafiliado');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -61,6 +69,7 @@ require_once APP_PATH . '/core/Controller.php';
 require_once APP_PATH . '/models/UsuarioModel.php';
 require_once APP_PATH . '/controllers/AuthController.php';
 require_once APP_PATH . '/controllers/DashboardController.php';
+require_once APP_PATH . '/controllers/AuditoriaController.php';
 
 header('X-Frame-Options: SAMEORIGIN');
 header('X-Content-Type-Options: nosniff');
@@ -71,7 +80,7 @@ $accion = isset($_GET['a']) ? trim((string) $_GET['a']) : '';
 if (!preg_match('/^[a-z]*$/', $controlador)) {
     $controlador = '';
 }
-if (!preg_match('/^[A-Za-z]*$/', $accion)) {
+if (!preg_match('/^[A-Za-z0-9]*$/', $accion)) {
     $accion = '';
 }
 
@@ -94,6 +103,19 @@ $mapa = array(
         ),
         'publico'  => array(),
         'default'  => 'evolucionPadrones',
+    ),
+    'auditoria' => array(
+        'clase'    => 'AuditoriaController',
+        'acciones' => array(
+            'controlPrestadores' => true,
+            'ajaxGetMaster' => true,
+            'ajaxGetExplosion1' => true,
+            'ajaxGetExplosion2' => true,
+            'ajaxGetFicha' => true,
+            'ajaxGetHistoriaAfiliado' => true,
+        ),
+        'publico'  => array(),
+        'default'  => 'controlPrestadores',
     ),
 );
 
