@@ -195,6 +195,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
     <article class="rounded-2xl bg-white p-4 shadow-sm">
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Variación porcentual</p>
         <p id="kpiPct" class="mt-2 text-2xl font-bold text-slate-800">—</p>
+        <p id="kpiPctDetalle" class="mt-1 text-xs text-slate-400"></p>
     </article>
     <article class="rounded-2xl bg-white p-4 shadow-sm">
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Período auditado</p>
@@ -485,6 +486,113 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
     </div>
 </div>
 
+<style>
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+.animate-fadeIn { animation: fadeIn .22s ease-out; }
+</style>
+<div id="aiModalAuditor" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/60 p-3 backdrop-blur-sm transition-opacity duration-300 md:p-6" aria-hidden="true">
+    <div class="animate-fadeIn relative flex h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl xl:max-w-5xl">
+        <div class="flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-blue-700 to-indigo-800 px-6 py-4 text-white shadow-sm">
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-xl backdrop-blur-md">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+                <div>
+                    <h3 class="flex items-center gap-2 text-lg font-bold leading-tight">
+                        Auditor Médico Pro <span class="rounded-full border border-blue-300/30 bg-blue-500/40 px-2 py-0.5 font-mono text-xs">Gemini 3.5 Flash</span>
+                    </h3>
+                    <p id="aiModalSubtitulo" class="text-xs font-medium text-blue-100">Seleccioná una obra y un período</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" id="btnAiReiniciarChat" title="Reiniciar auditoría" class="rounded-lg p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+                <button type="button" id="btnAiExportarPdf" title="Descargar / Imprimir PDF" class="rounded-lg p-2 text-red-200 transition-colors hover:bg-white/15 hover:text-white">
+                    <i class="fa-solid fa-file-pdf text-base"></i>
+                </button>
+                <button type="button" id="btnAiAbrirMail" title="Enviar informe por Email" class="rounded-lg p-2 text-blue-200 transition-colors hover:bg-white/15 hover:text-white">
+                    <i class="fa-solid fa-envelope text-base"></i>
+                </button>
+                <button type="button" id="btnAiCerrarModal" title="Cerrar ventana" class="rounded-lg p-2 text-lg text-white/80 transition-colors hover:bg-white/15 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+        <div id="aiChatHistorial" class="flex-1 space-y-4 overflow-y-auto bg-slate-50/70 p-6 text-sm leading-relaxed text-slate-800 md:text-base"></div>
+        <div id="loaderAuditorIa" class="hidden flex-shrink-0 border-t border-slate-100 bg-white px-6 py-2 text-xs font-medium text-slate-500">El auditor PRO está analizando...</div>
+        <div class="flex-shrink-0 border-t border-slate-200 bg-white p-4">
+            <div id="aiArchivoPreview" class="mb-2 hidden items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-800">
+                <span class="flex min-w-0 items-center gap-2 truncate">
+                    <i class="fa-solid fa-paperclip text-blue-600"></i>
+                    <strong id="aiArchivoNombre" class="truncate font-semibold"></strong>
+                </span>
+                <button type="button" id="btnAiRemoverArchivo" class="ml-2 text-slate-400 hover:text-red-500">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form id="aiChatForm" class="flex items-center gap-2">
+                <input type="file" id="aiInputFile" class="hidden" accept=".pdf,.csv,.txt,image/*">
+                <label for="aiInputFile" title="Adjuntar documento o imagen" class="flex cursor-pointer items-center justify-center rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-blue-600">
+                    <i class="fa-solid fa-paperclip text-lg"></i>
+                </label>
+                <input type="text" id="aiInputTexto" placeholder="Pregunta algo sobre el informe o pide proyecciones..." class="flex-1 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm transition-all focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" autocomplete="off">
+                <button type="submit" id="btnAiEnviar" class="flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-800 active:bg-blue-900">
+                    <span>Enviar</span>
+                    <i class="fa-solid fa-arrow-up text-xs"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div id="aiModalCorreo" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/60 p-3 backdrop-blur-sm md:p-6" aria-hidden="true">
+    <div class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div class="flex flex-shrink-0 items-center justify-between bg-gradient-to-r from-blue-700 to-indigo-800 px-5 py-4 text-white">
+            <div>
+                <h3 class="text-base font-bold">Enviar informe</h3>
+                <p class="text-xs text-blue-100">Copia oculta a no_responder@comedica.com.ar</p>
+            </div>
+            <button type="button" id="btnAiCerrarCorreo" title="Cerrar" class="rounded-lg p-2 text-white/80 hover:bg-white/15 hover:text-white">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <form id="aiMailForm" class="flex-1 space-y-3 overflow-y-auto p-5">
+            <label class="block text-xs font-semibold text-slate-600" for="aiMailPara">Para</label>
+            <input type="text" id="aiMailPara" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="destinatario@correo.com, otro@correo.com" autocomplete="off">
+            <label class="block text-xs font-semibold text-slate-600" for="aiMailAsunto">Asunto</label>
+            <input type="text" id="aiMailAsunto" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" maxlength="255">
+            <label class="block text-xs font-semibold text-slate-600" for="aiMailMensaje">Mensaje</label>
+            <textarea id="aiMailMensaje" rows="10" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm leading-relaxed focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            <div id="aiMailPreview" class="hidden items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-800">
+                <span class="flex min-w-0 items-center gap-2 truncate">
+                    <i class="fa-solid fa-paperclip text-blue-600"></i>
+                    <strong id="aiMailNombre" class="truncate font-semibold"></strong>
+                </span>
+                <button type="button" id="btnAiMailQuitar" class="ml-2 text-slate-400 hover:text-red-500">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="flex items-center justify-between gap-3 pt-1">
+                <div>
+                    <input type="file" id="aiMailFile" class="hidden" accept=".pdf,.csv,.txt,.doc,.docx,.xls,.xlsx,image/*">
+                    <label for="aiMailFile" title="Adjuntar documento" class="inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 hover:text-blue-700">
+                        <i class="fa-solid fa-paperclip"></i>
+                        <span>Adjuntar</span>
+                    </label>
+                </div>
+                <button type="submit" id="btnAiEnviarCorreo" class="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-800">
+                    <i class="fa-solid fa-paper-plane text-xs"></i>
+                    <span>Enviar</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 (function () {
     var accesos = <?php echo $accesosJson; ?>;
@@ -698,18 +806,25 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         var variacion = document.getElementById('kpiVar');
         var detalle = document.getElementById('kpiVarDetalle');
         var pct = document.getElementById('kpiPct');
+        var pctDetalle = document.getElementById('kpiPctDetalle');
         var periodo = document.getElementById('kpiPeriodo');
         total.textContent = fmtEntero(kpis.total);
+        periodo.textContent = kpis.periodo ? kpis.periodo : '—';
+        if (kpis.es_padron_inicial) {
+            variacion.textContent = '—';
+            variacion.className = 'mt-2 text-2xl font-bold text-slate-600';
+            detalle.innerHTML = '<span class="badge inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">Padrón Inicial</span>';
+            pct.textContent = '—';
+            pct.className = 'mt-2 text-2xl font-bold text-slate-600';
+            pctDetalle.textContent = 'Sin corte previo';
+            return;
+        }
         variacion.textContent = fmtFirmado(kpis.variacion);
         variacion.className = 'mt-2 text-2xl font-bold ' + claseVariacion(kpis.variacion);
         pct.textContent = fmtPct(kpis.variacion_pct);
         pct.className = 'mt-2 text-2xl font-bold ' + claseVariacion(kpis.variacion_pct);
-        periodo.textContent = kpis.periodo ? kpis.periodo : '—';
-        if (kpis.periodo_anterior) {
-            detalle.textContent = 'Contra ' + kpis.periodo_anterior;
-        } else {
-            detalle.textContent = '';
-        }
+        pctDetalle.textContent = '';
+        detalle.textContent = kpis.periodo_anterior ? ('Contra ' + kpis.periodo_anterior) : '';
     }
 
     function pintarMarcas(historico) {
@@ -1575,21 +1690,389 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         }
     });
 
-    document.getElementById('btnProfundizarIa').addEventListener('click', function () {
-        if (!contextoDiagnosticoIa) {
+    var chatIniciado = false;
+    var chatOcupado = false;
+
+    function obraAuditoria() {
+        var obra = document.getElementById('filtroObra').value;
+        return obra ? obra : '';
+    }
+
+    function abrirAuditorIa() {
+        var panel = document.getElementById('aiModalAuditor');
+        panel.classList.remove('hidden');
+        panel.classList.add('flex');
+        panel.setAttribute('aria-hidden', 'false');
+    }
+
+    function cerrarAuditorIa() {
+        var panel = document.getElementById('aiModalAuditor');
+        panel.classList.add('hidden');
+        panel.classList.remove('flex');
+        panel.setAttribute('aria-hidden', 'true');
+    }
+
+    function scrollAuditorIa() {
+        var caja = document.getElementById('aiChatHistorial');
+        caja.scrollTop = caja.scrollHeight;
+    }
+
+    function burbujaAuditorIa(rol, html) {
+        var caja = document.getElementById('aiChatHistorial');
+        var item = document.createElement('div');
+        item.setAttribute('data-rol', rol);
+        if (rol === 'user') {
+            item.className = 'ml-auto max-w-xl rounded-2xl bg-[#1565c0] px-4 py-2.5 text-sm text-white';
+            item.textContent = html;
+        } else {
+            item.className = 'max-w-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-relaxed text-slate-800 md:text-base';
+            item.innerHTML = html;
+        }
+        caja.appendChild(item);
+        scrollAuditorIa();
+    }
+
+    function loaderAuditorIa(visible) {
+        var nodo = document.getElementById('loaderAuditorIa');
+        if (visible) {
+            nodo.classList.remove('hidden');
+        } else {
+            nodo.classList.add('hidden');
+        }
+        scrollAuditorIa();
+    }
+
+    function pedirAuditorIa(accion, mensaje) {
+        if (chatOcupado) {
+            return;
+        }
+        var obra = obraAuditoria();
+        if (!obra) {
             Swal.fire({
-                icon: 'info',
-                title: 'Sin diagnóstico',
-                text: 'Actualice el filtro para armar el contexto antes de consultar a la IA.',
+                icon: 'warning',
+                title: 'Falta la obra social',
+                text: 'Seleccione una obra antes de consultar al auditor.',
                 confirmButtonColor: '#1565c0'
             });
             return;
         }
+        var datos = new FormData();
+        datos.append('accion', accion);
+        datos.append('obrasoc', obra);
+        datos.append('csrf_token', document.getElementById('csrfPadron').value);
+        if (mensaje) {
+            datos.append('mensaje', mensaje);
+        }
+        var archivo = document.getElementById('aiInputFile').files[0];
+        if (accion === 'mensaje' && archivo) {
+            datos.append('archivo_adjunto', archivo);
+        }
+        chatOcupado = true;
+        loaderAuditorIa(true);
+        fetch('index.php?c=dashboard&a=ajaxChatAi', {
+            method: 'POST',
+            body: datos,
+            credentials: 'same-origin'
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            chatOcupado = false;
+            loaderAuditorIa(false);
+            if (!data || data.status !== 'success') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Sin diagnóstico',
+                    text: (data && data.message) ? data.message : 'No se pudo consultar al auditor.',
+                    confirmButtonColor: '#1565c0'
+                });
+                return;
+            }
+            if (data.obra || data.periodo) {
+                document.getElementById('aiModalSubtitulo').textContent = (data.obra || obra) + (data.periodo ? ' · ' + data.periodo : '');
+            }
+            if (data.html) {
+                burbujaAuditorIa('model', data.html);
+                chatIniciado = true;
+            }
+            if (accion === 'mensaje') {
+                document.getElementById('aiInputTexto').value = '';
+                document.getElementById('aiInputFile').value = '';
+                document.getElementById('aiArchivoPreview').classList.add('hidden');
+                document.getElementById('aiArchivoPreview').classList.remove('flex');
+            }
+        }).catch(function () {
+            chatOcupado = false;
+            loaderAuditorIa(false);
+            Swal.fire({
+                icon: 'error',
+                title: 'Sin respuesta',
+                text: 'No se pudo contactar al auditor.',
+                confirmButtonColor: '#1565c0'
+            });
+        });
+    }
+
+    document.getElementById('btnProfundizarIa').addEventListener('click', function () {
+        abrirAuditorIa();
+        if (!chatIniciado) {
+            pedirAuditorIa('iniciar', '');
+        }
+    });
+    document.getElementById('btnAiCerrarModal').addEventListener('click', cerrarAuditorIa);
+    document.getElementById('aiModalAuditor').addEventListener('click', function (e) {
+        if (e.target === document.getElementById('aiModalAuditor')) {
+            cerrarAuditorIa();
+        }
+    });
+    document.getElementById('btnAiReiniciarChat').addEventListener('click', function () {
+        document.getElementById('aiChatHistorial').innerHTML = '';
+        document.getElementById('aiInputTexto').value = '';
+        document.getElementById('aiInputFile').value = '';
+        document.getElementById('aiArchivoPreview').classList.add('hidden');
+        document.getElementById('aiArchivoPreview').classList.remove('flex');
+        chatIniciado = false;
+        pedirAuditorIa('iniciar', '');
+    });
+    document.getElementById('aiInputFile').addEventListener('change', function () {
+        var archivo = this.files[0];
+        var preview = document.getElementById('aiArchivoPreview');
+        if (!archivo) {
+            preview.classList.add('hidden');
+            preview.classList.remove('flex');
+            return;
+        }
+        document.getElementById('aiArchivoNombre').textContent = archivo.name;
+        preview.classList.remove('hidden');
+        preview.classList.add('flex');
+    });
+    document.getElementById('btnAiRemoverArchivo').addEventListener('click', function () {
+        document.getElementById('aiInputFile').value = '';
+        document.getElementById('aiArchivoPreview').classList.add('hidden');
+        document.getElementById('aiArchivoPreview').classList.remove('flex');
+    });
+    document.getElementById('aiChatForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var texto = document.getElementById('aiInputTexto').value.replace(/^\s+|\s+$/g, '');
+        var archivo = document.getElementById('aiInputFile').files[0];
+        if (!texto && !archivo) {
+            return;
+        }
+        burbujaAuditorIa('user', texto || ('Adjunto: ' + archivo.name));
+        pedirAuditorIa('mensaje', texto);
+    });
+    document.getElementById('aiInputTexto').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('aiChatForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+    });
+
+    function escaparHtmlInforme(texto) {
+        return String(texto)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fechaInforme() {
+        var hoy = new Date();
+        function dos(n) { return n < 10 ? '0' + n : String(n); }
+        return dos(hoy.getDate()) + '/' + dos(hoy.getMonth() + 1) + '/' + hoy.getFullYear();
+    }
+
+    function obraInforme() {
+        var obra = document.getElementById('filtroObra').value;
+        return obra ? obra : 'Obra social';
+    }
+
+    function hayInformeAuditor() {
+        var caja = document.getElementById('aiChatHistorial');
+        var i;
+        if (!caja) {
+            return false;
+        }
+        for (i = 0; i < caja.children.length; i++) {
+            if (caja.children[i].getAttribute('data-rol') === 'model') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function textoInformeAuditor() {
+        var caja = document.getElementById('aiChatHistorial');
+        var partes = [];
+        var i;
+        var texto;
+        for (i = 0; i < caja.children.length; i++) {
+            if (caja.children[i].getAttribute('data-rol') !== 'model') {
+                continue;
+            }
+            texto = caja.children[i].innerText || caja.children[i].textContent || '';
+            texto = texto.replace(/^\s+|\s+$/g, '');
+            if (texto) {
+                partes.push(texto);
+            }
+        }
+        return partes.join('\n\n');
+    }
+
+    function abrirCorreoInforme() {
+        if (!hayInformeAuditor()) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Sin informe',
+                text: 'Pedí un diagnóstico antes de enviarlo.',
+                confirmButtonColor: '#1565c0'
+            });
+            return;
+        }
+        document.getElementById('aiMailAsunto').value = 'Informe ' + obraInforme() + ' - ' + fechaInforme();
+        document.getElementById('aiMailMensaje').value = textoInformeAuditor();
+        var panel = document.getElementById('aiModalCorreo');
+        panel.classList.remove('hidden');
+        panel.classList.add('flex');
+        panel.setAttribute('aria-hidden', 'false');
+        document.getElementById('aiMailPara').focus();
+    }
+
+    function cerrarCorreoInforme() {
+        var panel = document.getElementById('aiModalCorreo');
+        panel.classList.add('hidden');
+        panel.classList.remove('flex');
+        panel.setAttribute('aria-hidden', 'true');
+    }
+
+    function exportarInformePdf() {
+        var caja = document.getElementById('aiChatHistorial');
+        var ventana;
+        var html;
+        var i;
+        var nodo;
+        var rol;
+        if (!caja || !caja.children.length) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Sin informe',
+                text: 'Pedí un diagnóstico antes de imprimirlo.',
+                confirmButtonColor: '#1565c0'
+            });
+            return;
+        }
+        ventana = window.open('', '_blank');
+        if (!ventana) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Ventana bloqueada',
+                text: 'Permití las ventanas emergentes para guardar el informe en PDF.',
+                confirmButtonColor: '#1565c0'
+            });
+            return;
+        }
+        html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>'
+            + escaparHtmlInforme('Informe ' + obraInforme() + ' - ' + fechaInforme())
+            + '</title><style>body{font-family:Arial,sans-serif;color:#1e293b;margin:28px}h1{font-size:20px;margin:0}'
+            + '.meta{color:#64748b;font-size:12px;margin:6px 0 22px}.burbuja{margin:0 0 14px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:12px}'
+            + '.user{background:#1565c0;color:#fff;margin-left:18%}.model{background:#fff}table{border-collapse:collapse;width:100%;margin:8px 0}'
+            + 'td,th{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;vertical-align:top}ul{margin:8px 0 8px 18px}'
+            + '</style></head><body><h1>Auditor Médico Pro</h1><p class="meta">'
+            + escaparHtmlInforme(obraInforme() + ' · ' + fechaInforme())
+            + '</p>';
+        for (i = 0; i < caja.children.length; i++) {
+            nodo = caja.children[i];
+            rol = nodo.getAttribute('data-rol') === 'user' ? 'user' : 'model';
+            html += '<div class="burbuja ' + rol + '">';
+            html += rol === 'user' ? escaparHtmlInforme(nodo.textContent || '') : nodo.innerHTML;
+            html += '</div>';
+        }
+        html += '</body></html>';
+        ventana.document.open();
+        ventana.document.write(html);
+        ventana.document.close();
+        ventana.focus();
+        setTimeout(function () { ventana.print(); }, 300);
+    }
+
+    document.getElementById('btnAiExportarPdf').addEventListener('click', exportarInformePdf);
+    document.getElementById('btnAiAbrirMail').addEventListener('click', abrirCorreoInforme);
+    document.getElementById('btnAiCerrarCorreo').addEventListener('click', cerrarCorreoInforme);
+    document.getElementById('aiModalCorreo').addEventListener('click', function (e) {
+        if (e.target === document.getElementById('aiModalCorreo')) {
+            cerrarCorreoInforme();
+        }
+    });
+    document.getElementById('aiMailFile').addEventListener('change', function () {
+        var archivo = this.files[0];
+        var preview = document.getElementById('aiMailPreview');
+        if (!archivo) {
+            preview.classList.add('hidden');
+            preview.classList.remove('flex');
+            return;
+        }
+        document.getElementById('aiMailNombre').textContent = archivo.name;
+        preview.classList.remove('hidden');
+        preview.classList.add('flex');
+    });
+    document.getElementById('btnAiMailQuitar').addEventListener('click', function () {
+        document.getElementById('aiMailFile').value = '';
+        document.getElementById('aiMailPreview').classList.add('hidden');
+        document.getElementById('aiMailPreview').classList.remove('flex');
+    });
+    document.getElementById('aiMailForm').addEventListener('submit', function (e) {
+        var datos;
+        var archivo;
+        e.preventDefault();
+        if (!document.getElementById('aiMailPara').value.replace(/^\s+|\s+$/g, '')) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Falta el destinatario',
+                text: 'Escribí al menos un correo en Para.',
+                confirmButtonColor: '#1565c0'
+            });
+            return;
+        }
+        datos = new FormData();
+        datos.append('csrf_token', document.getElementById('csrfPadron').value);
+        datos.append('destinatarios', document.getElementById('aiMailPara').value);
+        datos.append('asunto', document.getElementById('aiMailAsunto').value);
+        datos.append('mensaje', document.getElementById('aiMailMensaje').value);
+        datos.append('obrasoc', obraInforme());
+        archivo = document.getElementById('aiMailFile').files[0];
+        if (archivo) {
+            datos.append('archivo_correo', archivo);
+        }
         Swal.fire({
-            icon: 'info',
-            title: 'Disparador preparado',
-            text: 'El contexto del indicador quedó armado para la futura consulta a la API de IA. Todavía no se envía ninguna petición.',
-            confirmButtonColor: '#1565c0'
+            title: 'Enviando informe',
+            allowOutsideClick: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+        fetch('index.php?c=dashboard&a=ajaxEnviarInformeAi', {
+            method: 'POST',
+            body: datos,
+            credentials: 'same-origin'
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data || data.status !== 'success') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'No se envió',
+                    text: (data && data.message) ? data.message : 'El servidor de correo rechazó el informe.',
+                    confirmButtonColor: '#1565c0'
+                });
+                return;
+            }
+            cerrarCorreoInforme();
+            Swal.fire({
+                icon: 'success',
+                title: 'Informe enviado',
+                text: data.message || 'El correo salió con copia oculta.',
+                confirmButtonColor: '#1565c0'
+            });
+        }).catch(function () {
+            Swal.fire({
+                icon: 'error',
+                title: 'Sin respuesta',
+                text: 'No se pudo contactar al servidor de correo.',
+                confirmButtonColor: '#1565c0'
+            });
         });
     });
 

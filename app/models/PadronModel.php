@@ -2,10 +2,9 @@
 /**
  * Evolución mensual de padrones.
  *
- * El corte de cada mes está en vfpmedicos.padrosoc (CANTREG). Ese total
- * coincide con COUNT(*) de vfpmedicos.t_padron en los períodos que esa
- * tabla todavía tiene (hasta 22/01). padrosoc sigue hasta el corte vigente.
- * El período se publica como aa/mm, el mismo formato de t_padron.PERIODO.
+ * El corte de cada mes está en vfpmedicos.padrosoc (CANTREG).
+ * Si t_padron tiene un período posterior al último de padrosoc, ese
+ * corte entra con COUNT(*). El período se publica como aa/mm.
  *
  * ESTADO = 'A' no está cargado en todas las obras (en varias el estado
  * viene vacío y el padrón importado es el total del corte).
@@ -20,6 +19,7 @@ class PadronModel
     private $db;
     private $cortes = null;
     private $nombres = null;
+    private $detalleObra = array();
 
     public function __construct()
     {
@@ -91,7 +91,7 @@ class PadronModel
     public function getKpisUltimoPeriodo($obrasoc)
     {
         $serie = $this->agregarPorPeriodo($this->filtrarCortes($obrasoc, array()));
-        return $this->calcularKpis($serie);
+        return $this->calcularKpis($serie, $obrasoc);
     }
 
     public function getDatosInteranuales($obrasoc, $aniosArray)
@@ -178,7 +178,7 @@ class PadronModel
             'status'     => 'success',
             'message'    => count($serie) === 0 ? 'No hay cortes para el filtro elegido.' : '',
             'anios'      => $anios,
-            'kpis'       => $this->calcularKpis($serie),
+            'kpis'       => $this->calcularKpis($serie, $obrasoc),
             'interanual' => $this->getDatosInteranuales($obrasoc, $anios),
             'historico'  => $historico,
             'movimiento' => $movimiento,
@@ -190,7 +190,7 @@ class PadronModel
     /**
      * Diagnóstico del padrón de una obra (o de todas, si $obrasoc va vacío).
      * Máximo, mínimo y comparativa interanual salen de la serie completa.
-     * Las marcas especiales salen del corte activo en padron_activos.enrol1.
+     * Las marcas especiales salen de t_padron.enrol1 en el último período real.
      */
     public function getEstadisticasDiagnostico($obrasoc)
     {
@@ -268,7 +268,16 @@ class PadronModel
             }
         }
 
+        $reales = array();
+        if ($obra !== '') {
+            foreach ($this->leerCortesDetalle($obra) as $real) {
+                $reales[$real['periodo']] = true;
+            }
+        }
+        $hayReales = count($reales) > 0;
+
         $salida = array();
+        $ordenMax = -1;
         foreach ($this->leerCortes() as $fila) {
             if ($obra !== '' && $fila['obrasoc'] !== $obra) {
                 continue;
@@ -276,9 +285,83 @@ class PadronModel
             if (count($mapaAnios) > 0 && !isset($mapaAnios[(int) $fila['anio']])) {
                 continue;
             }
+            if ($hayReales && !isset($reales[$fila['periodo']]) && (int) $fila['total'] <= 1) {
+                continue;
+            }
             $salida[] = $fila;
+            if ((int) $fila['orden'] > $ordenMax) {
+                $ordenMax = (int) $fila['orden'];
+            }
         }
+
+        if ($obra !== '') {
+            foreach ($this->leerCortesDetalle($obra) as $fila) {
+                if ((int) $fila['orden'] <= $ordenMax) {
+                    continue;
+                }
+                if (count($mapaAnios) > 0 && !isset($mapaAnios[(int) $fila['anio']])) {
+                    continue;
+                }
+                $salida[] = $fila;
+            }
+        }
+
         return $salida;
+    }
+
+    private function leerCortesDetalle($obra)
+    {
+        if (isset($this->detalleObra[$obra])) {
+            return $this->detalleObra[$obra];
+        }
+
+        $sql = "SELECT TRIM(PERIODO) AS periodo, COUNT(*) AS total
+                  FROM vfpmedicos.t_padron
+                 WHERE OBRASOC = :obra
+                   AND PERIODO <> ''
+                 GROUP BY PERIODO";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array(':obra' => $obra));
+        $filas = $stmt->fetchAll();
+        $lista = array();
+
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $corte = $this->corteDesdePeriodo(
+                    $obra,
+                    $this->valorFila($fila, 'periodo'),
+                    $this->valorFila($fila, 'total')
+                );
+                if ($corte !== null) {
+                    $lista[] = $corte;
+                }
+            }
+        }
+
+        $this->detalleObra[$obra] = $lista;
+        return $lista;
+    }
+
+    private function corteDesdePeriodo($obra, $periodo, $total)
+    {
+        $periodo = trim((string) $periodo);
+        if (!preg_match('/^(\d{2})\/(\d{2})$/', $periodo, $partes)) {
+            return null;
+        }
+        $anio = 2000 + (int) $partes[1];
+        $mes = (int) $partes[2];
+        if ($mes < 1 || $mes > 12) {
+            return null;
+        }
+
+        return array(
+            'obrasoc' => $obra,
+            'anio'    => $anio,
+            'mes'     => $mes,
+            'total'   => (int) $total,
+            'periodo' => $this->formatearPeriodo($anio, $mes),
+            'orden'   => ($anio * 100) + $mes,
+        );
     }
 
     private function agregarPorPeriodo($cortes)
@@ -305,14 +388,15 @@ class PadronModel
         return $lista;
     }
 
-    private function calcularKpis($serie)
+    private function calcularKpis($serie, $obrasoc)
     {
         $vacio = array(
-            'total'            => 0,
-            'variacion'        => null,
-            'variacion_pct'    => null,
-            'periodo'          => '',
-            'periodo_anterior' => '',
+            'total'              => 0,
+            'variacion'          => null,
+            'variacion_pct'      => null,
+            'periodo'            => '',
+            'periodo_anterior'   => '',
+            'es_padron_inicial'  => true,
         );
 
         $cantidad = count($serie);
@@ -329,14 +413,41 @@ class PadronModel
         }
 
         $anterior = $serie[$cantidad - 2];
-        $variacion = (int) $actual['total'] - (int) $anterior['total'];
-        $vacio['variacion'] = $variacion;
-        $vacio['periodo_anterior'] = $anterior['periodo'];
-        if ((int) $anterior['total'] !== 0) {
-            $vacio['variacion_pct'] = round(($variacion / (int) $anterior['total']) * 100, 2);
+        $totalAnterior = (int) $anterior['total'];
+        $hayPrevio = $this->hayCorteAnterior($obrasoc, $actual['periodo']);
+        if (!$hayPrevio || $totalAnterior <= 0) {
+            return $vacio;
         }
 
+        $variacion = (int) $actual['total'] - $totalAnterior;
+        $vacio['variacion'] = $variacion;
+        $vacio['variacion_pct'] = round(($variacion / $totalAnterior) * 100, 1);
+        $vacio['periodo_anterior'] = $anterior['periodo'];
+        $vacio['es_padron_inicial'] = false;
+
         return $vacio;
+    }
+
+    private function hayCorteAnterior($obrasoc, $periodoActual)
+    {
+        $obra = strtoupper(trim((string) $obrasoc));
+        if ($obra === '') {
+            return true;
+        }
+
+        $detalle = $this->leerCortesDetalle($obra);
+        if (count($detalle) === 0) {
+            return true;
+        }
+
+        $ordenActual = $this->ordenPeriodo($periodoActual);
+        foreach ($detalle as $fila) {
+            if ((int) $fila['orden'] < $ordenActual && (int) $fila['total'] > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function empaquetarHistorico($serie)
@@ -692,101 +803,121 @@ class PadronModel
         );
     }
 
+    public function getUltimoPeriodoReal($obrasoc)
+    {
+        $obra = strtoupper(trim((string) $obrasoc));
+        if ($obra === '') {
+            return null;
+        }
+
+        $mejor = null;
+        foreach ($this->leerCortesDetalle($obra) as $fila) {
+            if ($mejor === null || (int) $fila['orden'] > (int) $mejor['orden']) {
+                $mejor = $fila;
+            }
+        }
+        if ($mejor === null) {
+            return null;
+        }
+
+        return $mejor['periodo'];
+    }
+
+    public function getUltimoPeriodo($obrasoc)
+    {
+        $serie = $this->agregarPorPeriodo($this->filtrarCortes($obrasoc, array()));
+        $cantidad = count($serie);
+        if ($cantidad === 0) {
+            return array(
+                'periodo' => '',
+                'total'   => 0,
+            );
+        }
+
+        $ultimo = $serie[$cantidad - 1];
+        return array(
+            'periodo' => $ultimo['periodo'],
+            'total'   => (int) $ultimo['total'],
+        );
+    }
+
     private function leerMarcasEspeciales($obrasoc)
     {
         $obra = strtoupper(trim((string) $obrasoc));
-        $where = '';
-        $params = array();
-        if ($obra !== '') {
-            $where = ' WHERE UPPER(TRIM(OBRASOC)) = :obra ';
-            $params[':obra'] = $obra;
+        if ($obra === '') {
+            return array(
+                'disponible' => false,
+                'lineas'     => array('Seleccione una obra social para medir los programas especiales.'),
+            );
         }
 
-        $sqlTotal = "SELECT COUNT(*) AS total, TRIM(PERIODO) AS periodo
-                       FROM vfpmedicos.padron_activos"
-                  . $where
-                  . " GROUP BY TRIM(PERIODO)";
-        $stmt = $this->db->prepare($sqlTotal);
-        $stmt->execute($params);
-        $cortes = $stmt->fetchAll();
-
-        $total = 0;
-        $periodo = '';
-        $orden = 0;
-        if (is_array($cortes)) {
-            foreach ($cortes as $corte) {
-                $clave = $this->ordenPeriodo(isset($corte['periodo']) ? $corte['periodo'] : '');
-                if ($clave >= $orden) {
-                    $orden = $clave;
-                    $total = (int) $corte['total'];
-                    $periodo = trim((string) $corte['periodo']);
-                }
-            }
-        }
-
-        if ($total === 0) {
+        $corte = $this->getUltimoPeriodo($obra);
+        $periodo = $corte['periodo'];
+        $total = (int) $corte['total'];
+        if ($periodo === '' || $total <= 0) {
             return array(
                 'disponible' => false,
                 'lineas'     => array('El corte activo no tiene afiliados cargados para esta obra social, así que no se puede medir la incidencia de enrol1.'),
             );
         }
 
-        $sqlMarcas = "SELECT TRIM(ENROL1) AS marca, COUNT(*) AS cantidad
-                        FROM vfpmedicos.padron_activos
-                       WHERE CHAR_LENGTH(TRIM(IFNULL(ENROL1, ''))) > 0";
-        if ($obra !== '') {
-            $sqlMarcas .= ' AND UPPER(TRIM(OBRASOC)) = :obra';
-        }
-        if ($periodo !== '') {
-            $sqlMarcas .= ' AND TRIM(PERIODO) = :periodo';
-        }
-        $sqlMarcas .= ' GROUP BY TRIM(ENROL1) ORDER BY cantidad DESC';
+        $sql = "SELECT TRIM(ENROL1) AS marca, COUNT(*) AS cantidad
+                  FROM vfpmedicos.t_padron
+                 WHERE OBRASOC = :obra
+                   AND PERIODO = :periodo
+                   AND ENROL1 IS NOT NULL
+                   AND TRIM(ENROL1) != ''
+                   AND TRIM(ENROL1) != '-'
+                 GROUP BY TRIM(ENROL1)
+                 ORDER BY cantidad DESC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array(
+            ':obra'    => $obra,
+            ':periodo' => $periodo,
+        ));
+        $filas = $stmt->fetchAll();
 
-        $paramsMarcas = $params;
-        if ($periodo !== '') {
-            $paramsMarcas[':periodo'] = $periodo;
+        $agrupado = array();
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $nombre = $this->normalizarProgramaEspecial($obra, $this->valorFila($fila, 'marca'));
+                $cantidad = (int) $this->valorFila($fila, 'cantidad');
+                if ($nombre === '' || $cantidad === 0) {
+                    continue;
+                }
+                if (!isset($agrupado[$nombre])) {
+                    $agrupado[$nombre] = 0;
+                }
+                $agrupado[$nombre] += $cantidad;
+            }
         }
-        $stmtMarcas = $this->db->prepare($sqlMarcas);
-        $stmtMarcas->execute($paramsMarcas);
-        $filas = $stmtMarcas->fetchAll();
+        arsort($agrupado);
 
         $marcados = 0;
         $detalle = array();
-        if (is_array($filas)) {
-            foreach ($filas as $fila) {
-                $cantidad = (int) $fila['cantidad'];
-                $marcados += $cantidad;
-                $detalle[] = array(
-                    'marca'    => trim((string) $fila['marca']),
-                    'cantidad' => $cantidad,
-                );
-            }
+        foreach ($agrupado as $nombre => $cantidad) {
+            $marcados += (int) $cantidad;
+            $detalle[] = array(
+                'marca'    => $nombre,
+                'cantidad' => (int) $cantidad,
+            );
         }
 
-        $pct = round(($marcados / $total) * 100, 1);
-        $alcance = $obra === '' ? 'del padrón activo cargado' : 'del padrón total de la obra social';
+        $pct = $total > 0 ? round(($marcados / $total) * 100, 1) : 0;
         $lineas = array();
-        $lineas[] = 'Los casos con marca especial (enrol1: CUD, oncología, crónicos y otros programas) representan el '
-            . $this->formatoPorcentaje($pct)
-            . ' '
-            . $alcance
-            . ' ('
-            . $this->formatoEntero($marcados)
-            . ' de '
-            . $this->formatoEntero($total)
-            . ' en '
-            . $periodo
-            . ').';
-
         if (count($detalle) === 0) {
-            $lineas[] = 'En ese corte no hay afiliados con enrol1 informado.';
+            $lineas[] = 'En el corte ' . $periodo . ' no hay afiliados con enrol1 informado.';
         } else {
             $tope = 0;
             foreach ($detalle as $item) {
                 if ($tope >= 6) {
                     break;
                 }
-                $lineas[] = $item['marca'] . ': ' . $this->formatoEntero($item['cantidad']) . ' afiliados.';
+                $pctItem = round(($item['cantidad'] / $total) * 100, 1);
+                $lineas[] = $item['marca'] . ': ' . $this->formatoEntero($item['cantidad'])
+                    . ' afiliados (' . $this->formatoPorcentaje($pctItem)
+                    . ' del padrón de ' . $this->formatoEntero($total)
+                    . ' en ' . $periodo . ').';
                 $tope++;
             }
         }
@@ -820,7 +951,9 @@ class PadronModel
         $obra = strtoupper(trim((string) $obrasoc));
         $sql = "SELECT TRIM(PERIODO) AS periodo, TRIM(ENROL1) AS marca, COUNT(*) AS total
                   FROM vfpmedicos.t_padron
-                 WHERE ENROL1 <> ''";
+                 WHERE ENROL1 IS NOT NULL
+                   AND TRIM(ENROL1) != ''
+                   AND TRIM(ENROL1) != '-'";
         $params = array();
         if ($obra !== '') {
             $sql .= ' AND OBRASOC = :obra';
@@ -842,7 +975,10 @@ class PadronModel
                 if ($periodo === '' || $marca === '' || $cantidad === 0) {
                     continue;
                 }
-                $etiqueta = $this->etiquetaPrograma($marca);
+                $etiqueta = $this->normalizarProgramaEspecial($obra, $marca);
+                if ($etiqueta === '') {
+                    continue;
+                }
                 if (!isset($matriz[$periodo])) {
                     $matriz[$periodo] = array();
                 }
@@ -1009,7 +1145,7 @@ class PadronModel
         }
         $total = 0;
         foreach ($matriz[$periodo] as $etiqueta => $cantidad) {
-            if ($etiqueta === 'Discapacidad / CUD') {
+            if ($etiqueta === 'CUD (Discapacidad)' || $etiqueta === 'Discapacidad / CUD') {
                 $total += (int) $cantidad;
             }
         }
@@ -1032,6 +1168,19 @@ class PadronModel
             return '';
         }
         return sprintf('%02d/%02d', $anio, $mes);
+    }
+
+    private function normalizarProgramaEspecial($obrasoc, $codigoEnrol)
+    {
+        $codigo = strtoupper(trim((string) $codigoEnrol));
+        if ($codigo === '' || $codigo === '-') {
+            return '';
+        }
+        if ($codigo === 'A' || strpos($codigo, 'DISCAP') !== false) {
+            return 'CUD (Discapacidad)';
+        }
+
+        return $this->etiquetaPrograma($codigoEnrol);
     }
 
     private function etiquetaPrograma($marca)
@@ -1239,11 +1388,17 @@ class PadronModel
     }
 
     /**
-     * Demografía, planes y zona del último corte activo (padron_activos).
+     * Demografía, planes y zona del último período real de t_padron.
      */
-    public function getDemografiaYPlanes($obrasoc)
+    public function getDemografiaYPlanes($obrasoc, $periodoReal = null)
     {
         $corte = $this->resolverCorteActivo($obrasoc);
+        $forzado = trim((string) $periodoReal);
+        if ($forzado !== '') {
+            $corte['periodo'] = $forzado;
+            $corte['disponible'] = true;
+            $corte['fuente'] = 't_padron';
+        }
         if (empty($corte['disponible'])) {
             $aviso = array('El corte activo no tiene afiliados cargados para esta obra social.');
             return array(
@@ -1354,13 +1509,13 @@ class PadronModel
     {
         $sql = "SELECT SUM(CASE
                            WHEN UPPER(TRIM(CODADH)) = 'ADH' THEN 1
-                           WHEN TRIM(CODADH) != '' AND CODADH IS NOT NULL AND TRIM(CODADH) NOT IN ('00', '000', '0', 'TIT') THEN 1
+                           WHEN TRIM(CODADH) != '' AND CODADH IS NOT NULL AND TRIM(CODADH) NOT IN ('00', '000', '0', 'TIT', 'TITU') THEN 1
                            ELSE 0
                        END) AS adherentes,
                        SUM(CASE
                            WHEN CODADH IS NULL THEN 1
                            WHEN TRIM(CODADH) = '' THEN 1
-                           WHEN TRIM(CODADH) IN ('00', '000', '0', 'TIT') THEN 1
+                           WHEN TRIM(CODADH) IN ('00', '000', '0', 'TIT', 'TITU') THEN 1
                            ELSE 0
                        END) AS titulares,
                        COUNT(*) AS total
@@ -1445,7 +1600,7 @@ class PadronModel
                           FROM (
                                 SELECT TIMESTAMPDIFF(YEAR, FECNACIM, :corte) AS edad,
                                        SEXO AS sexo_raw
-                                  FROM vfpmedicos.padron_activos"
+                                  FROM vfpmedicos.t_padron"
                      . $filtro['sql']
                      . "          ) base
                        ) clasificado
@@ -1541,7 +1696,7 @@ class PadronModel
                          ELSE TRIM(PLAN)
                        END AS plan,
                        COUNT(*) AS cantidad
-                  FROM vfpmedicos.padron_activos"
+                  FROM vfpmedicos.t_padron"
              . $filtro['sql']
              . " GROUP BY plan
                  ORDER BY cantidad DESC";
@@ -1719,32 +1874,22 @@ class PadronModel
     private function resolverCorteActivo($obrasoc)
     {
         $obra = strtoupper(trim((string) $obrasoc));
-        $where = '';
-        $params = array();
-        if ($obra !== '') {
-            $where = ' WHERE UPPER(TRIM(OBRASOC)) = :obra ';
-            $params[':obra'] = $obra;
+        $periodo = $this->getUltimoPeriodoReal($obra);
+        if ($periodo === null || $periodo === '') {
+            return array(
+                'disponible' => false,
+                'periodo'    => '',
+                'total'      => 0,
+                'fuente'     => 't_padron',
+                'obra'       => $obra,
+            );
         }
 
-        $sql = "SELECT COUNT(*) AS total, TRIM(PERIODO) AS periodo
-                  FROM vfpmedicos.padron_activos"
-             . $where
-             . " GROUP BY TRIM(PERIODO)";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        $cortes = $stmt->fetchAll();
-
         $total = 0;
-        $periodo = '';
-        $orden = 0;
-        if (is_array($cortes)) {
-            foreach ($cortes as $corte) {
-                $clave = $this->ordenPeriodo(isset($corte['periodo']) ? $corte['periodo'] : '');
-                if ($clave >= $orden) {
-                    $orden = $clave;
-                    $total = (int) $corte['total'];
-                    $periodo = trim((string) $corte['periodo']);
-                }
+        foreach ($this->leerCortesDetalle($obra) as $fila) {
+            if ($fila['periodo'] === $periodo) {
+                $total = (int) $fila['total'];
+                break;
             }
         }
 
@@ -1752,7 +1897,7 @@ class PadronModel
             'disponible' => $total > 0,
             'periodo'    => $periodo,
             'total'      => $total,
-            'fuente'     => 'padron_activos',
+            'fuente'     => 't_padron',
             'obra'       => $obra,
         );
     }
@@ -1769,11 +1914,11 @@ class PadronModel
 
     private function filtroCorteActivo($obrasoc, $periodo)
     {
-        $sql = ' WHERE TRIM(PERIODO) = :periodo ';
+        $sql = ' WHERE PERIODO = :periodo ';
         $params = array(':periodo' => trim((string) $periodo));
         $obra = strtoupper(trim((string) $obrasoc));
         if ($obra !== '') {
-            $sql .= ' AND UPPER(TRIM(OBRASOC)) = :obra ';
+            $sql .= ' AND OBRASOC = :obra ';
             $params[':obra'] = $obra;
         }
         return array('sql' => $sql, 'params' => $params);
