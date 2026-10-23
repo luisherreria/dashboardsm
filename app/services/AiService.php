@@ -37,6 +37,10 @@ class AiService
         $sistema = 'Eres el Auditor Médico Senior y Gerente Financiero de la Obra Social. Analiza estos datos consolidados del corte actual: '
             . $contextoJson
             . '. Detecta desvíos poblacionales, riesgos por envejecimiento, impacto de discapacidad (CUD) y analiza cualquier documento externo adjunto. Sé ejecutivo, directo, sin saludos y responde en HTML simple (<b>, <ul>, <li>, <p>, <table>).';
+        $reglas = $this->leerReglasNegocio();
+        if ($reglas !== '') {
+            $sistema .= ' Respetá estas directivas de negocio en todas las obras sociales: ' . $reglas;
+        }
 
         $contents = array();
         $empezo = false;
@@ -217,5 +221,25 @@ class AiService
         $html = preg_replace('/```/', '', $html);
         $html = preg_replace('/<\s*script\b[^>]*>.*?<\s*\/\s*script\s*>/is', '', $html);
         return strip_tags($html, '<b><strong><ul><ol><li><p><table><thead><tbody><tr><td><th><br><em><h3><h4>');
+    }
+
+    private function leerReglasNegocio()
+    {
+        $ruta = dirname(dirname(__DIR__)) . '/config/reglas_ia.txt';
+        if (!is_file($ruta)) {
+            return '';
+        }
+        $texto = file_get_contents($ruta);
+        if ($texto === false) {
+            return '';
+        }
+        if (substr($texto, 0, 3) === "\xEF\xBB\xBF") {
+            $texto = substr($texto, 3);
+        }
+        $texto = trim($texto);
+        if (strlen($texto) > 12000) {
+            $texto = substr($texto, 0, 12000);
+        }
+        return $texto;
     }
 }

@@ -492,6 +492,12 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
     to { opacity: 1; transform: none; }
 }
 .animate-fadeIn { animation: fadeIn .22s ease-out; }
+#aiMailInforme table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+#aiMailInforme th, #aiMailInforme td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
+#aiMailInforme th { background: #1d4ed8; color: #fff; }
+#aiMailInforme h3 { margin: 12px 0 6px; font-weight: 700; color: #1e3a8a; }
+#aiMailInforme h4 { margin: 10px 0 4px; font-weight: 700; color: #1d4ed8; }
+#aiMailInforme ul, #aiMailInforme ol { margin: 0 0 10px 18px; }
 </style>
 <div id="aiModalAuditor" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/60 p-3 backdrop-blur-sm transition-opacity duration-300 md:p-6" aria-hidden="true">
     <div class="animate-fadeIn relative flex h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl xl:max-w-5xl">
@@ -516,6 +522,9 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                 </button>
                 <button type="button" id="btnAiAbrirMail" title="Enviar informe por Email" class="rounded-lg p-2 text-blue-200 transition-colors hover:bg-white/15 hover:text-white">
                     <i class="fa-solid fa-envelope text-base"></i>
+                </button>
+                <button type="button" id="btnAiConfigReglas" title="Configurar Reglas de Auditoría" class="rounded-lg p-2 text-amber-200 transition-colors hover:bg-white/15 hover:text-white">
+                    <i class="fa-solid fa-sliders text-base"></i>
                 </button>
                 <button type="button" id="btnAiCerrarModal" title="Cerrar ventana" class="rounded-lg p-2 text-lg text-white/80 transition-colors hover:bg-white/15 hover:text-white">
                     <i class="fa-solid fa-xmark"></i>
@@ -563,10 +572,14 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         <form id="aiMailForm" class="flex-1 space-y-3 overflow-y-auto p-5">
             <label class="block text-xs font-semibold text-slate-600" for="aiMailPara">Para</label>
             <input type="text" id="aiMailPara" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="destinatario@correo.com, otro@correo.com" autocomplete="off">
+            <label class="block text-xs font-semibold text-slate-600" for="aiMailCc">Con copia (CC)</label>
+            <input type="text" id="aiMailCc" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="opcional@correo.com, otro@correo.com" autocomplete="off">
             <label class="block text-xs font-semibold text-slate-600" for="aiMailAsunto">Asunto</label>
             <input type="text" id="aiMailAsunto" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" maxlength="255">
-            <label class="block text-xs font-semibold text-slate-600" for="aiMailMensaje">Mensaje</label>
-            <textarea id="aiMailMensaje" rows="10" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm leading-relaxed focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+            <p class="text-xs font-semibold text-slate-600">Informe</p>
+            <div id="aiMailInforme" class="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800"></div>
+            <label class="block text-xs font-semibold text-slate-600" for="aiMailNota">Nota para el destinatario</label>
+            <textarea id="aiMailNota" rows="3" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm leading-relaxed focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Opcional. Se muestra arriba del informe."></textarea>
             <div id="aiMailPreview" class="hidden items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-800">
                 <span class="flex min-w-0 items-center gap-2 truncate">
                     <i class="fa-solid fa-paperclip text-blue-600"></i>
@@ -590,6 +603,39 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<div id="modal-reglas-ia" class="fixed inset-0 z-[110] hidden items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm" aria-hidden="true">
+    <div class="animate-fadeIn flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div class="flex flex-shrink-0 items-center justify-between bg-slate-800 px-6 py-4 text-white">
+            <h3 class="flex items-center gap-2 text-base font-bold">
+                <i class="fa-solid fa-scale-balanced text-amber-400"></i> Directivas y Reglas de la IA
+            </h3>
+            <button type="button" id="btnCerrarModalReglas" class="text-lg text-white/80 hover:text-white">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="flex-1 space-y-4 overflow-y-auto p-6">
+            <label id="zona-drop-reglas" for="input-archivo-reglas" class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center transition-colors hover:border-blue-500 hover:bg-blue-50">
+                <i class="fa-solid fa-file-arrow-up text-2xl text-slate-500"></i>
+                <span class="text-xs font-semibold text-slate-700">Arrastrá un archivo .txt acá o hacé clic para subirlo</span>
+                <span id="nombre-txt-reglas" class="text-[11px] text-slate-400">Solo archivos de texto (.txt)</span>
+                <input id="input-archivo-reglas" type="file" accept=".txt,text/plain" class="hidden">
+            </label>
+            <div>
+                <label for="textarea-reglas-ia" class="mb-1 block text-xs font-semibold uppercase text-slate-700">
+                    Directivas activas (La IA las memoriza para todas las Obras Sociales):
+                </label>
+                <textarea id="textarea-reglas-ia" rows="10" placeholder="Escribe aquí las reglas que la IA debe respetar..." class="w-full rounded-lg border border-slate-300 bg-slate-50 p-3 font-mono text-xs leading-relaxed focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 md:text-sm"></textarea>
+            </div>
+        </div>
+        <div class="flex flex-shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-3">
+            <button type="button" id="btnCancelarReglas" class="rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100">Cancelar</button>
+            <button type="button" id="btnGuardarReglas" class="flex items-center gap-2 rounded-lg bg-blue-700 px-5 py-2 text-xs font-medium text-white shadow-sm hover:bg-blue-800">
+                <i class="fa-solid fa-floppy-disk"></i> Guardar Directivas
+            </button>
+        </div>
     </div>
 </div>
 
@@ -1898,22 +1944,22 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         return false;
     }
 
-    function textoInformeAuditor() {
+    function htmlInformeAuditor() {
         var caja = document.getElementById('aiChatHistorial');
         var partes = [];
         var i;
-        var texto;
+        var html;
         for (i = 0; i < caja.children.length; i++) {
             if (caja.children[i].getAttribute('data-rol') !== 'model') {
                 continue;
             }
-            texto = caja.children[i].innerText || caja.children[i].textContent || '';
-            texto = texto.replace(/^\s+|\s+$/g, '');
-            if (texto) {
-                partes.push(texto);
+            html = caja.children[i].innerHTML || '';
+            html = html.replace(/^\s+|\s+$/g, '');
+            if (html) {
+                partes.push(html);
             }
         }
-        return partes.join('\n\n');
+        return partes.join('');
     }
 
     function abrirCorreoInforme() {
@@ -1927,7 +1973,8 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             return;
         }
         document.getElementById('aiMailAsunto').value = 'Informe ' + obraInforme() + ' - ' + fechaInforme();
-        document.getElementById('aiMailMensaje').value = textoInformeAuditor();
+        document.getElementById('aiMailInforme').innerHTML = htmlInformeAuditor();
+        document.getElementById('aiMailNota').value = '';
         var panel = document.getElementById('aiModalCorreo');
         panel.classList.remove('hidden');
         panel.classList.add('flex');
@@ -2033,9 +2080,12 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         datos = new FormData();
         datos.append('csrf_token', document.getElementById('csrfPadron').value);
         datos.append('destinatarios', document.getElementById('aiMailPara').value);
+        datos.append('con_copia', document.getElementById('aiMailCc').value);
         datos.append('asunto', document.getElementById('aiMailAsunto').value);
-        datos.append('mensaje', document.getElementById('aiMailMensaje').value);
+        datos.append('mensaje_html', htmlInformeAuditor());
+        datos.append('nota', document.getElementById('aiMailNota').value);
         datos.append('obrasoc', obraInforme());
+        datos.append('fecha', fechaInforme());
         archivo = document.getElementById('aiMailFile').files[0];
         if (archivo) {
             datos.append('archivo_correo', archivo);
@@ -2071,6 +2121,159 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                 icon: 'error',
                 title: 'Sin respuesta',
                 text: 'No se pudo contactar al servidor de correo.',
+                confirmButtonColor: '#1565c0'
+            });
+        });
+    });
+
+    function abrirModalReglas() {
+        var panel = document.getElementById('modal-reglas-ia');
+        panel.classList.remove('hidden');
+        panel.classList.add('flex');
+        panel.setAttribute('aria-hidden', 'false');
+    }
+
+    function cerrarModalReglas() {
+        var panel = document.getElementById('modal-reglas-ia');
+        panel.classList.add('hidden');
+        panel.classList.remove('flex');
+        panel.setAttribute('aria-hidden', 'true');
+        document.getElementById('input-archivo-reglas').value = '';
+        document.getElementById('nombre-txt-reglas').textContent = 'Solo archivos de texto (.txt)';
+    }
+
+    function marcarZonaReglas(activa) {
+        var zona = document.getElementById('zona-drop-reglas');
+        if (activa) {
+            zona.classList.add('border-blue-500', 'bg-blue-50');
+        } else {
+            zona.classList.remove('border-blue-500', 'bg-blue-50');
+        }
+    }
+
+    function volcarTxtReglas(archivo) {
+        var nombre = archivo && archivo.name ? archivo.name : '';
+        var esTxt = /\.txt$/i.test(nombre) || archivo.type === 'text/plain';
+        if (!archivo || !esTxt) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Archivo no válido',
+                text: 'Soltá un archivo de texto .txt.',
+                confirmButtonColor: '#1565c0'
+            });
+            return;
+        }
+        var lector = new FileReader();
+        lector.onload = function () {
+            document.getElementById('textarea-reglas-ia').value = String(lector.result || '');
+            document.getElementById('nombre-txt-reglas').textContent = nombre;
+        };
+        lector.onerror = function () {
+            Swal.fire({
+                icon: 'error',
+                title: 'No se pudo leer',
+                text: 'El archivo .txt no se pudo abrir.',
+                confirmButtonColor: '#1565c0'
+            });
+        };
+        lector.readAsText(archivo, 'UTF-8');
+    }
+
+    document.getElementById('btnAiConfigReglas').addEventListener('click', function () {
+        var datos = new FormData();
+        datos.append('csrf_token', document.getElementById('csrfPadron').value);
+        fetch('index.php?c=dashboard&a=ajaxObtenerReglasIa', {
+            method: 'POST',
+            body: datos,
+            credentials: 'same-origin'
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data || data.status !== 'ok') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Sin reglas',
+                    text: (data && data.message) ? data.message : 'No se pudieron leer las directivas.',
+                    confirmButtonColor: '#1565c0'
+                });
+                return;
+            }
+            document.getElementById('textarea-reglas-ia').value = data.contenido || '';
+            abrirModalReglas();
+        }).catch(function () {
+            Swal.fire({
+                icon: 'error',
+                title: 'Sin respuesta',
+                text: 'No se pudo consultar las reglas.',
+                confirmButtonColor: '#1565c0'
+            });
+        });
+    });
+    document.getElementById('btnCerrarModalReglas').addEventListener('click', cerrarModalReglas);
+    document.getElementById('btnCancelarReglas').addEventListener('click', cerrarModalReglas);
+    document.getElementById('modal-reglas-ia').addEventListener('click', function (e) {
+        if (e.target === document.getElementById('modal-reglas-ia')) {
+            cerrarModalReglas();
+        }
+    });
+    document.getElementById('zona-drop-reglas').addEventListener('dragenter', function (e) {
+        e.preventDefault();
+        marcarZonaReglas(true);
+    });
+    document.getElementById('zona-drop-reglas').addEventListener('dragover', function (e) {
+        e.preventDefault();
+        marcarZonaReglas(true);
+    });
+    document.getElementById('zona-drop-reglas').addEventListener('dragleave', function (e) {
+        e.preventDefault();
+        marcarZonaReglas(false);
+    });
+    document.getElementById('zona-drop-reglas').addEventListener('drop', function (e) {
+        e.preventDefault();
+        marcarZonaReglas(false);
+        var archivos = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : null;
+        if (archivos && archivos.length) {
+            volcarTxtReglas(archivos[0]);
+        }
+    });
+    document.getElementById('input-archivo-reglas').addEventListener('change', function () {
+        if (this.files && this.files[0]) {
+            volcarTxtReglas(this.files[0]);
+        }
+    });
+    document.getElementById('btnGuardarReglas').addEventListener('click', function () {
+        var datos = new FormData();
+        datos.append('csrf_token', document.getElementById('csrfPadron').value);
+        datos.append('contenido', document.getElementById('textarea-reglas-ia').value);
+        Swal.fire({
+            title: 'Guardando directivas',
+            allowOutsideClick: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+        fetch('index.php?c=dashboard&a=ajaxGuardarReglasIa', {
+            method: 'POST',
+            body: datos,
+            credentials: 'same-origin'
+        }).then(function (r) { return r.json(); }).then(function (data) {
+            if (!data || data.status !== 'ok') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'No se guardó',
+                    text: (data && data.message) ? data.message : 'No se pudieron guardar las directivas.',
+                    confirmButtonColor: '#1565c0'
+                });
+                return;
+            }
+            cerrarModalReglas();
+            Swal.fire({
+                icon: 'success',
+                title: 'Directivas guardadas',
+                text: data.mensaje || 'Reglas actualizadas correctamente.',
+                confirmButtonColor: '#1565c0'
+            });
+        }).catch(function () {
+            Swal.fire({
+                icon: 'error',
+                title: 'Sin respuesta',
+                text: 'No se pudo guardar las reglas.',
                 confirmButtonColor: '#1565c0'
             });
         });

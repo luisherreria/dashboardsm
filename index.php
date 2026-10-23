@@ -28,7 +28,9 @@ $esAjax = ($accionPedida === 'ajaxlogin'
     || $accionPedida === 'ajaxgetficha'
     || $accionPedida === 'ajaxgethistoriaafiliado'
     || $accionPedida === 'ajaxchatai'
-    || $accionPedida === 'ajaxenviarinformeai');
+    || $accionPedida === 'ajaxenviarinformeai'
+    || $accionPedida === 'ajaxobtenerreglasia'
+    || $accionPedida === 'ajaxguardarreglasia');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -103,6 +105,8 @@ $mapa = array(
             'ajaxGetEvolucionEspeciales' => true,
             'ajaxChatAi' => true,
             'ajaxEnviarInformeAi' => true,
+            'ajaxObtenerReglasIa' => true,
+            'ajaxGuardarReglasIa' => true,
             'administradores' => true,
         ),
         'publico'  => array(),

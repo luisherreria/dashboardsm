@@ -442,18 +442,35 @@ class DashboardController extends Controller
         }
 
         $destinatarios = isset($_POST['destinatarios']) ? trim((string) $_POST['destinatarios']) : '';
+        $conCopia = isset($_POST['con_copia']) ? trim((string) $_POST['con_copia']) : '';
         $asunto = isset($_POST['asunto']) ? trim((string) $_POST['asunto']) : '';
-        $mensaje = isset($_POST['mensaje']) ? trim((string) $_POST['mensaje']) : '';
+        $nota = isset($_POST['nota']) ? trim((string) $_POST['nota']) : '';
+        $htmlCrudo = isset($_POST['mensaje_html']) ? (string) $_POST['mensaje_html'] : '';
+        $obra = isset($_POST['obrasoc']) ? trim((string) $_POST['obrasoc']) : '';
+        $fecha = isset($_POST['fecha']) ? trim((string) $_POST['fecha']) : '';
         if (function_exists('mb_substr')) {
             $asunto = mb_substr($asunto, 0, 255, 'UTF-8');
-        } elseif (strlen($asunto) > 255) {
-            $asunto = substr($asunto, 0, 255);
+            $nota = mb_substr($nota, 0, 4000, 'UTF-8');
+            $obra = mb_substr($obra, 0, 20, 'UTF-8');
+        } else {
+            if (strlen($asunto) > 255) {
+                $asunto = substr($asunto, 0, 255);
+            }
+            if (strlen($nota) > 4000) {
+                $nota = substr($nota, 0, 4000);
+            }
+            if (strlen($obra) > 20) {
+                $obra = substr($obra, 0, 20);
+            }
         }
-        if (strlen($mensaje) > 100000) {
-            $mensaje = substr($mensaje, 0, 100000);
+        if (!preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $fecha)) {
+            $fecha = date('d/m/Y');
+        }
+        if (strlen($htmlCrudo) > 200000) {
+            $htmlCrudo = substr($htmlCrudo, 0, 200000);
         }
 
-        $lista = $this->partirCorreosInforme($destinatarios);
+        $lista = $this->partirCorreosInforme($destinatarios, true);
         if (isset($lista['error'])) {
             $this->registrarEnvioInforme($destinatarios, $asunto, 'ERROR', $lista['error']);
             $this->json(array(
@@ -461,14 +478,34 @@ class DashboardController extends Controller
                 'message' => $lista['error'],
             ));
         }
-        if ($asunto === '' || $mensaje === '') {
-            $detalle = 'El asunto y el mensaje son obligatorios.';
+        $copias = $this->partirCorreosInforme($conCopia, false);
+        if (isset($copias['error'])) {
+            $this->registrarEnvioInforme($destinatarios, $asunto, 'ERROR', $copias['error']);
+            $this->json(array(
+                'status'  => 'error',
+                'message' => $copias['error'],
+            ));
+        }
+        if ($asunto === '') {
+            $detalle = 'El asunto es obligatorio.';
             $this->registrarEnvioInforme($destinatarios, $asunto, 'ERROR', $detalle);
             $this->json(array(
                 'status'  => 'error',
                 'message' => $detalle,
             ));
         }
+
+        $informe = $this->htmlInformeCorreo($htmlCrudo);
+        if ($informe === '' && $nota === '') {
+            $detalle = 'El informe está vacío.';
+            $this->registrarEnvioInforme($destinatarios, $asunto, 'ERROR', $detalle);
+            $this->json(array(
+                'status'  => 'error',
+                'message' => $detalle,
+            ));
+        }
+        $cuerpo = $this->plantillaInformeCorreo($asunto, $obra, $fecha, $nota, $informe);
+        $alt = trim($nota . "\n\n" . $this->textoPlanoInforme($informe));
 
         $adjunto = $this->leerAdjuntoCorreo();
         if (isset($adjunto['error'])) {
@@ -479,10 +516,14 @@ class DashboardController extends Controller
             ));
         }
 
-        $resultado = $this->enviarInformeSmtp($lista, $asunto, $mensaje, $adjunto);
+        $resultado = $this->enviarInformeSmtp($lista, $copias, $asunto, $cuerpo, $alt, $adjunto);
         $estado = !empty($resultado['ok']) ? 'ENVIADO' : 'ERROR';
         $detalle = isset($resultado['texto']) ? $resultado['texto'] : '';
-        $this->registrarEnvioInforme(implode(', ', $lista), $asunto, $estado, $detalle);
+        $registro = implode(', ', $lista);
+        if (count($copias) > 0) {
+            $registro .= ' | CC: ' . implode(', ', $copias);
+        }
+        $this->registrarEnvioInforme($registro, $asunto, $estado, $detalle);
 
         if (empty($resultado['ok'])) {
             $this->json(array(
@@ -497,13 +538,16 @@ class DashboardController extends Controller
         ));
     }
 
-    private function partirCorreosInforme($texto)
+    private function partirCorreosInforme($texto, $obligatorio)
     {
         $partes = preg_split('/[;,]+/', (string) $texto);
         $lista = array();
         $vistos = array();
         if (!is_array($partes)) {
-            return array('error' => 'Escribí al menos un destinatario.');
+            if ($obligatorio) {
+                return array('error' => 'Escribí al menos un destinatario.');
+            }
+            return array();
         }
         foreach ($partes as $parte) {
             $correo = trim((string) $parte);
@@ -511,7 +555,7 @@ class DashboardController extends Controller
                 continue;
             }
             if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
-                return array('error' => 'El destinatario "' . $correo . '" no es un correo válido.');
+                return array('error' => 'El correo "' . $correo . '" no es válido.');
             }
             $clave = strtolower($correo);
             if (isset($vistos[$clave])) {
@@ -520,10 +564,10 @@ class DashboardController extends Controller
             $vistos[$clave] = true;
             $lista[] = $correo;
             if (count($lista) > 10) {
-                return array('error' => 'Podés enviar el informe a 10 destinatarios como máximo.');
+                return array('error' => 'Podés incluir 10 correos como máximo en cada campo.');
             }
         }
-        if (count($lista) === 0) {
+        if ($obligatorio && count($lista) === 0) {
             return array('error' => 'Escribí al menos un destinatario.');
         }
         return $lista;
@@ -562,7 +606,7 @@ class DashboardController extends Controller
         );
     }
 
-    private function enviarInformeSmtp($lista, $asunto, $mensaje, $adjunto)
+    private function enviarInformeSmtp($lista, $copias, $asunto, $cuerpoHtml, $alt, $adjunto)
     {
         $bcc = 'no_responder@comedica.com.ar';
         try {
@@ -592,28 +636,32 @@ class DashboardController extends Controller
             $mail->Username = (string) $cfg['usuario'];
             $mail->Password = (string) $cfg['password'];
             $mail->CharSet = 'UTF-8';
+            $mail->Encoding = 'base64';
             $mail->Timeout = 30;
             $mail->SMTPSecure = ((int) $cfg['puerto'] === 465) ? 'ssl' : 'tls';
             $mail->setFrom((string) $cfg['remitente_email'], (string) $cfg['remitente_nombre']);
+            $usados = array();
             foreach ($lista as $correo) {
                 $mail->addAddress($correo);
+                $usados[strtolower($correo)] = true;
             }
-            $yaCopia = false;
-            foreach ($lista as $correo) {
-                if (strtolower($correo) === $bcc) {
-                    $yaCopia = true;
+            if (is_array($copias)) {
+                foreach ($copias as $correo) {
+                    $clave = strtolower($correo);
+                    if (isset($usados[$clave])) {
+                        continue;
+                    }
+                    $mail->addCC($correo);
+                    $usados[$clave] = true;
                 }
             }
-            if (!$yaCopia) {
+            if (!isset($usados[$bcc])) {
                 $mail->addBCC($bcc);
             }
             $mail->isHTML(true);
             $mail->Subject = $asunto;
-            $cuerpo = '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1e293b;">'
-                . nl2br(htmlspecialchars($mensaje, ENT_QUOTES, 'UTF-8'))
-                . '</div>';
-            $mail->Body = $cuerpo;
-            $mail->AltBody = $mensaje;
+            $mail->Body = $cuerpoHtml;
+            $mail->AltBody = $alt;
             if (is_array($adjunto) && !empty($adjunto['ruta'])) {
                 $mail->addAttachment($adjunto['ruta'], $adjunto['nombre']);
             }
@@ -625,6 +673,145 @@ class DashboardController extends Controller
         }
 
         return array('ok' => true, 'texto' => 'Aceptado por el servidor SMTP.');
+    }
+
+    private function htmlInformeCorreo($html)
+    {
+        $html = (string) $html;
+        $html = preg_replace('/<\s*script\b[^>]*>.*?<\s*\/\s*script\s*>/is', '', $html);
+        $html = preg_replace('/<\s*style\b[^>]*>.*?<\s*\/\s*style\s*>/is', '', $html);
+        $html = strip_tags($html, '<b><strong><ul><ol><li><p><table><thead><tbody><tr><td><th><br><em><h3><h4>');
+        $html = trim($html);
+        if ($html === '') {
+            return '';
+        }
+
+        $doc = new DOMDocument('1.0', 'UTF-8');
+        $erroresPrevios = libxml_use_internal_errors(true);
+        $doc->loadHTML('<?xml encoding="UTF-8"><div id="raiz-informe">' . $html . '</div>');
+        libxml_clear_errors();
+        libxml_use_internal_errors($erroresPrevios);
+
+        $xpath = new DOMXPath($doc);
+        $nodos = $xpath->query('//*[@id="raiz-informe"]');
+        $raiz = ($nodos && $nodos->length > 0) ? $nodos->item(0) : null;
+        if (!$raiz) {
+            return '';
+        }
+
+        $estilos = array(
+            'p'      => 'margin:0 0 12px;font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#1e293b;',
+            'ul'     => 'margin:0 0 12px 20px;padding:0;font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1e293b;',
+            'ol'     => 'margin:0 0 12px 20px;padding:0;font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1e293b;',
+            'li'     => 'margin:0 0 6px;font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1e293b;',
+            'h3'     => 'margin:18px 0 8px;font-family:Arial,sans-serif;font-size:16px;line-height:1.3;color:#1e3a8a;border-bottom:2px solid #dbeafe;padding-bottom:4px;',
+            'h4'     => 'margin:14px 0 6px;font-family:Arial,sans-serif;font-size:14px;line-height:1.3;color:#1d4ed8;',
+            'b'      => 'font-weight:bold;color:#0f172a;',
+            'strong' => 'font-weight:bold;color:#0f172a;',
+            'em'     => 'font-style:italic;color:#334155;',
+            'table'  => 'width:100%;border-collapse:collapse;margin:12px 0 16px;font-family:Arial,sans-serif;font-size:13px;',
+            'th'     => 'background:#1d4ed8;color:#ffffff;text-align:left;padding:8px 10px;border:1px solid #1e40af;font-weight:bold;font-family:Arial,sans-serif;font-size:13px;',
+            'td'     => 'padding:8px 10px;border:1px solid #cbd5e1;color:#1e293b;vertical-align:top;font-family:Arial,sans-serif;font-size:13px;',
+        );
+        foreach ($raiz->childNodes as $hijo) {
+            $this->aplicarEstilosInforme($hijo, $estilos, 0);
+        }
+
+        $filas = $raiz->getElementsByTagName('tr');
+        $datos = 0;
+        foreach ($filas as $fila) {
+            if ($fila->getElementsByTagName('th')->length > 0) {
+                continue;
+            }
+            if ($datos % 2 === 1) {
+                foreach ($fila->childNodes as $celda) {
+                    if ($celda->nodeType === XML_ELEMENT_NODE && strtolower($celda->nodeName) === 'td') {
+                        $celda->setAttribute('style', $celda->getAttribute('style') . 'background:#f8fafc;');
+                    }
+                }
+            }
+            $datos++;
+        }
+
+        $salida = '';
+        foreach ($raiz->childNodes as $hijo) {
+            $salida .= $doc->saveHTML($hijo);
+        }
+        return $salida;
+    }
+
+    private function aplicarEstilosInforme($nodo, $estilos, $profundidad)
+    {
+        if ($profundidad > 40 || $nodo->nodeType !== XML_ELEMENT_NODE) {
+            return;
+        }
+        $hijos = array();
+        foreach ($nodo->childNodes as $hijo) {
+            $hijos[] = $hijo;
+        }
+        foreach ($hijos as $hijo) {
+            $this->aplicarEstilosInforme($hijo, $estilos, $profundidad + 1);
+        }
+        if ($nodo->hasAttributes()) {
+            $quitar = array();
+            foreach ($nodo->attributes as $attr) {
+                $quitar[] = $attr->nodeName;
+            }
+            foreach ($quitar as $nombre) {
+                $nodo->removeAttribute($nombre);
+            }
+        }
+        $tag = strtolower($nodo->nodeName);
+        if (isset($estilos[$tag])) {
+            $nodo->setAttribute('style', $estilos[$tag]);
+        }
+    }
+
+    private function plantillaInformeCorreo($asunto, $obra, $fecha, $nota, $informe)
+    {
+        $asuntoHtml = htmlspecialchars($asunto, ENT_QUOTES, 'UTF-8');
+        $obraHtml = htmlspecialchars($obra !== '' ? $obra : 'Obra social', ENT_QUOTES, 'UTF-8');
+        $fechaHtml = htmlspecialchars($fecha, ENT_QUOTES, 'UTF-8');
+        $notaHtml = '';
+        if ($nota !== '') {
+            $notaHtml = '<p style="margin:0 0 16px;padding:12px 14px;background:#eff6ff;border-left:4px solid #1d4ed8;font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#1e3a8a;">'
+                . nl2br(htmlspecialchars($nota, ENT_QUOTES, 'UTF-8'))
+                . '</p>';
+        }
+
+        return '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><title>'
+            . $asuntoHtml
+            . '</title></head><body style="margin:0;padding:0;background:#f1f5f9;">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;width:100%;">'
+            . '<tr><td align="center" style="padding:24px 12px;">'
+            . '<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:640px;max-width:640px;background:#ffffff;border:1px solid #e2e8f0;">'
+            . '<tr><td style="background:#1d4ed8;padding:22px 28px;">'
+            . '<div style="font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;color:#bfdbfe;">COMEDICA</div>'
+            . '<div style="font-family:Arial,sans-serif;font-size:20px;font-weight:bold;color:#ffffff;margin-top:4px;">Auditor Médico Pro</div>'
+            . '<div style="font-family:Arial,sans-serif;font-size:13px;color:#dbeafe;margin-top:6px;">' . $obraHtml . ' · ' . $fechaHtml . '</div>'
+            . '</td></tr>'
+            . '<tr><td style="padding:20px 28px 0;">'
+            . '<div style="font-family:Arial,sans-serif;font-size:16px;font-weight:bold;line-height:1.35;color:#0f172a;">' . $asuntoHtml . '</div>'
+            . '</td></tr>'
+            . '<tr><td style="padding:16px 28px 28px;font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#1e293b;">'
+            . $notaHtml . $informe
+            . '</td></tr>'
+            . '<tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 28px;font-family:Arial,sans-serif;font-size:11px;line-height:1.4;color:#64748b;">'
+            . 'Informe generado por el Auditor Médico Pro. Este mensaje se envía desde una casilla que no recibe respuestas.'
+            . '</td></tr></table></td></tr></table></body></html>';
+    }
+
+    private function textoPlanoInforme($html)
+    {
+        $texto = str_replace(
+            array('<br>', '<br/>', '<br />', '</p>', '</li>', '</h3>', '</h4>', '</tr>', '</div>'),
+            array("\n", "\n", "\n", "\n", "\n", "\n", "\n", "\n", "\n"),
+            (string) $html
+        );
+        $texto = html_entity_decode(strip_tags($texto), ENT_QUOTES, 'UTF-8');
+        $texto = preg_replace("/[ \t]+\n/", "\n", $texto);
+        $texto = preg_replace("/\n{3,}/", "\n\n", $texto);
+        return trim($texto);
     }
 
     private function limpiarErrorSmtp($texto, $password)
@@ -655,6 +842,144 @@ class DashboardController extends Controller
         } catch (Exception $e) {
             error_log('DashboardController::registrarEnvioInforme — ' . $e->getMessage());
         }
+    }
+
+    public function ajaxObtenerReglasIa()
+    {
+        $this->exigirAjaxPadron();
+        $ruta = $this->rutaReglasIa();
+        if (!is_file($ruta)) {
+            $plantilla = $this->plantillaReglasIa();
+            if (file_put_contents($ruta, $plantilla, LOCK_EX) === false) {
+                $this->json(array(
+                    'status'  => 'error',
+                    'message' => 'No se pudo crear el archivo de reglas.',
+                ));
+            }
+        }
+        $contenido = file_get_contents($ruta);
+        if ($contenido === false) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudieron leer las reglas.',
+            ));
+        }
+        $this->json(array(
+            'status'    => 'ok',
+            'contenido' => $contenido,
+        ));
+    }
+
+    public function ajaxGuardarReglasIa()
+    {
+        $this->exigirAjaxPadron();
+        if (isset($_POST['contenido'])) {
+            $contenido = (string) $_POST['contenido'];
+        } else {
+            $contenido = $this->leerTxtReglasSubido();
+            if (is_array($contenido)) {
+                $this->json(array(
+                    'status'  => 'error',
+                    'message' => $contenido['error'],
+                ));
+            }
+        }
+        if (substr($contenido, 0, 3) === "\xEF\xBB\xBF") {
+            $contenido = substr($contenido, 3);
+        }
+        if (strlen($contenido) > 100000) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Las reglas superan el tamaño permitido.',
+            ));
+        }
+        if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', $contenido)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'El archivo tiene que ser texto plano.',
+            ));
+        }
+        $contenido = str_replace(array("\r\n", "\r"), "\n", $contenido);
+        if (file_put_contents($this->rutaReglasIa(), $contenido, LOCK_EX) === false) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudieron guardar las reglas.',
+            ));
+        }
+        $this->json(array(
+            'status'  => 'ok',
+            'mensaje' => 'Reglas actualizadas correctamente.',
+        ));
+    }
+
+    private function exigirAjaxPadron()
+    {
+        if (!$this->estaLogueado()) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La sesión expiró. Vuelva a ingresar.',
+            ));
+        }
+        if (!isset($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Método no permitido.',
+            ));
+        }
+        $tokenSesion = isset($_SESSION['csrf_token']) ? (string) $_SESSION['csrf_token'] : '';
+        $tokenPost = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+        if ($tokenSesion === '' || $tokenPost === '' || !hash_equals($tokenSesion, $tokenPost)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La sesión del formulario venció. Recargue la página.',
+            ));
+        }
+    }
+
+    private function rutaReglasIa()
+    {
+        return dirname(dirname(__DIR__)) . '/config/reglas_ia.txt';
+    }
+
+    private function plantillaReglasIa()
+    {
+        return "Directivas del Auditor Médico Pro\n"
+            . "- Respondé en español, de forma ejecutiva y sin saludos.\n"
+            . "- Priorizá desvíos de padrón, envejecimiento y CUD (discapacidad).\n"
+            . "- No inventes cifras: usá solo el contexto del corte y los documentos adjuntos.\n"
+            . "- Si el padrón es inicial, no calcules variación contra un corte inexistente.\n"
+            . "- Señalá el peso del CUD sobre el padrón total y el riesgo financiero.\n"
+            . "- Cuando armes una tabla, incluí totales y el porcentaje sobre el padrón.\n";
+    }
+
+    private function leerTxtReglasSubido()
+    {
+        if (!isset($_FILES['archivo_reglas']) || !is_array($_FILES['archivo_reglas'])) {
+            return array('error' => 'No llegó el texto de las reglas.');
+        }
+        $archivo = $_FILES['archivo_reglas'];
+        $error = isset($archivo['error']) ? (int) $archivo['error'] : UPLOAD_ERR_NO_FILE;
+        if ($error !== UPLOAD_ERR_OK) {
+            return array('error' => 'No se pudo recibir el archivo de reglas.');
+        }
+        $nombre = isset($archivo['name']) ? (string) $archivo['name'] : '';
+        $extension = strtolower(pathinfo($nombre, PATHINFO_EXTENSION));
+        if ($extension !== 'txt') {
+            return array('error' => 'Solo se aceptan archivos .txt.');
+        }
+        $tamanio = isset($archivo['size']) ? (int) $archivo['size'] : 0;
+        if ($tamanio <= 0 || $tamanio > 100000) {
+            return array('error' => 'El archivo de reglas supera el tamaño permitido.');
+        }
+        $tmp = isset($archivo['tmp_name']) ? (string) $archivo['tmp_name'] : '';
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            return array('error' => 'El archivo de reglas no es válido.');
+        }
+        $texto = file_get_contents($tmp);
+        if ($texto === false) {
+            return array('error' => 'No se pudo leer el archivo de reglas.');
+        }
+        return $texto;
     }
 
     public function administradores()
