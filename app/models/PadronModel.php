@@ -20,6 +20,7 @@ class PadronModel
     private $cortes = null;
     private $nombres = null;
     private $detalleObra = array();
+    private $vigentesObra = array();
 
     public function __construct()
     {
@@ -182,6 +183,7 @@ class PadronModel
             'interanual' => $this->getDatosInteranuales($obrasoc, $anios),
             'historico'  => $historico,
             'movimiento' => $movimiento,
+            'movimiento_real' => $this->movimientoPersonas($obrasoc, $anios),
             'tabla'      => $this->armarTabla($detalle),
             'insights'   => $this->armarInsights($serie, $diagnostico),
         );
@@ -623,7 +625,7 @@ class PadronModel
 
         $this->nombres = array();
         $sql = "SELECT TRIM(TACODIGO) AS codigo, TRIM(TADESCRIP) AS nombre
-                  FROM vfpmedicos.obrasoc
+                  FROM cartilla.obrasoc
                  WHERE TACODIGO IS NOT NULL
                    AND TRIM(TACODIGO) <> ''";
         $stmt = $this->db->query($sql);
@@ -861,20 +863,25 @@ class PadronModel
             );
         }
 
+        $archivo = $this->archivoVigente($obra, $periodo);
         $sql = "SELECT TRIM(ENROL1) AS marca, COUNT(*) AS cantidad
                   FROM vfpmedicos.t_padron
                  WHERE OBRASOC = :obra
                    AND PERIODO = :periodo
                    AND ENROL1 IS NOT NULL
                    AND TRIM(ENROL1) != ''
-                   AND TRIM(ENROL1) != '-'
-                 GROUP BY TRIM(ENROL1)
-                 ORDER BY cantidad DESC";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute(array(
+                   AND TRIM(ENROL1) != '-'";
+        $paramsMarcas = array(
             ':obra'    => $obra,
             ':periodo' => $periodo,
-        ));
+        );
+        if ($archivo !== '') {
+            $sql .= ' AND TRIM(PFILE) = :archivo';
+            $paramsMarcas[':archivo'] = $archivo;
+        }
+        $sql .= ' GROUP BY TRIM(ENROL1) ORDER BY cantidad DESC';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($paramsMarcas);
         $filas = $stmt->fetchAll();
 
         $agrupado = array();
@@ -949,7 +956,7 @@ class PadronModel
         }
 
         $obra = strtoupper(trim((string) $obrasoc));
-        $sql = "SELECT TRIM(PERIODO) AS periodo, TRIM(ENROL1) AS marca, COUNT(*) AS total
+        $sql = "SELECT TRIM(PERIODO) AS periodo, TRIM(PFILE) AS pfile, TRIM(ENROL1) AS marca, COUNT(*) AS total
                   FROM vfpmedicos.t_padron
                  WHERE ENROL1 IS NOT NULL
                    AND TRIM(ENROL1) != ''
@@ -959,7 +966,7 @@ class PadronModel
             $sql .= ' AND OBRASOC = :obra';
             $params[':obra'] = $obra;
         }
-        $sql .= ' GROUP BY PERIODO, ENROL1';
+        $sql .= ' GROUP BY PERIODO, PFILE, ENROL1';
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
@@ -970,10 +977,17 @@ class PadronModel
         if (is_array($filas)) {
             foreach ($filas as $fila) {
                 $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+                $pfile = strtoupper(trim((string) $this->valorFila($fila, 'pfile')));
                 $marca = trim((string) $this->valorFila($fila, 'marca'));
                 $cantidad = (int) $this->valorFila($fila, 'total');
                 if ($periodo === '' || $marca === '' || $cantidad === 0) {
                     continue;
+                }
+                if ($obra !== '') {
+                    $vigente = $this->archivoVigente($obra, $periodo);
+                    if ($vigente !== '' && $pfile !== $vigente) {
+                        continue;
+                    }
                 }
                 $etiqueta = $this->normalizarProgramaEspecial($obra, $marca);
                 if ($etiqueta === '') {
@@ -1186,6 +1200,9 @@ class PadronModel
     private function etiquetaPrograma($marca)
     {
         $texto = strtoupper(trim((string) $marca));
+        if ($texto === 'COMUN' || $texto === 'COMUNES') {
+            return 'Población general';
+        }
         if (strpos($texto, 'MEDICAMENT') !== false) {
             return 'Discapacidad (medicamentos)';
         }
@@ -1409,6 +1426,7 @@ class PadronModel
                 'etario'       => $this->respuestaEtariaVacia($aviso),
                 'planes'       => $this->respuestaPlanesVacia($aviso),
                 'localidades'  => $this->getTopLocalidades($obrasoc, ''),
+                'zonas'        => $this->respuestaZonasVacia($aviso),
             );
         }
 
@@ -1421,6 +1439,7 @@ class PadronModel
             'etario'      => $this->getDistribucionEtariaYSexo($obrasoc, $periodo),
             'planes'      => $this->getMixPlanes($obrasoc, $periodo),
             'localidades' => $this->getTopLocalidades($obrasoc, $periodo),
+            'zonas'       => $this->getDiscapacidadPorZona($obrasoc, $periodo),
         );
     }
 
@@ -1525,6 +1544,11 @@ class PadronModel
         if ($obra !== '') {
             $sql .= ' AND OBRASOC = :obra';
             $params[':obra'] = $obra;
+            $archivo = $this->archivoVigente($obra, $periodo);
+            if ($archivo !== '') {
+                $sql .= ' AND TRIM(PFILE) = :archivo';
+                $params[':archivo'] = $archivo;
+            }
         }
 
         $stmt = $this->db->prepare($sql);
@@ -1582,7 +1606,7 @@ class PadronModel
         $params = $filtro['params'];
         $params[':corte'] = $fechaCorte;
 
-        $sql = "SELECT rango, sexo, COUNT(*) AS cantidad
+        $sql = "SELECT rango, sexo, disca, COUNT(*) AS cantidad
                   FROM (
                         SELECT CASE
                                  WHEN edad IS NULL OR edad < 0 THEN 'Sin edad'
@@ -1596,32 +1620,44 @@ class PadronModel
                                  WHEN UPPER(TRIM(sexo_raw)) IN ('M', 'MASCULINO', 'H', 'V', '1') THEN 'M'
                                  WHEN UPPER(TRIM(sexo_raw)) IN ('F', 'FEMENINO', '2') THEN 'F'
                                  ELSE 'O'
-                               END AS sexo
+                               END AS sexo,
+                               CASE
+                                 WHEN UPPER(TRIM(enrol_raw)) LIKE '%DISCAP%' THEN 1
+                                 ELSE 0
+                               END AS disca
                           FROM (
                                 SELECT TIMESTAMPDIFF(YEAR, FECNACIM, :corte) AS edad,
-                                       SEXO AS sexo_raw
+                                       SEXO AS sexo_raw,
+                                       ENROL1 AS enrol_raw
                                   FROM vfpmedicos.t_padron"
                      . $filtro['sql']
                      . "          ) base
                        ) clasificado
-                 GROUP BY rango, sexo";
+                 GROUP BY rango, sexo, disca";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $filas = $stmt->fetchAll();
 
         $matriz = array();
+        $discaMatriz = array();
         foreach ($rangos as $rango) {
             $matriz[$rango] = array('M' => 0, 'F' => 0, 'O' => 0);
+            $discaMatriz[$rango] = array('M' => 0, 'F' => 0, 'O' => 0);
         }
         $sinEdad = 0;
+        $sinEdadDisca = 0;
         if (is_array($filas)) {
             foreach ($filas as $fila) {
                 $rango = (string) $fila['rango'];
                 $sexo = (string) $fila['sexo'];
                 $cantidad = (int) $fila['cantidad'];
+                $esDisca = (int) $fila['disca'] === 1;
                 if ($rango === 'Sin edad') {
                     $sinEdad += $cantidad;
+                    if ($esDisca) {
+                        $sinEdadDisca += $cantidad;
+                    }
                     continue;
                 }
                 if (!isset($matriz[$rango])) {
@@ -1631,27 +1667,56 @@ class PadronModel
                     $sexo = 'O';
                 }
                 $matriz[$rango][$sexo] += $cantidad;
+                if ($esDisca) {
+                    $discaMatriz[$rango][$sexo] += $cantidad;
+                }
             }
         }
 
         $serieM = array();
         $serieF = array();
         $serieO = array();
+        $serieDiscaM = array();
+        $serieDiscaF = array();
+        $serieDiscaO = array();
         $mayorRango = '';
         $mayorCantidad = -1;
+        $mayorDiscaRango = '';
+        $mayorDisca = -1;
         $total = $sinEdad;
+        $totalDisca = $sinEdadDisca;
+        $rangosDisca = array();
         foreach ($rangos as $rango) {
             $hombres = (int) $matriz[$rango]['M'];
             $mujeres = (int) $matriz[$rango]['F'];
             $otros = (int) $matriz[$rango]['O'];
+            $discaH = (int) $discaMatriz[$rango]['M'];
+            $discaMuj = (int) $discaMatriz[$rango]['F'];
+            $discaOtros = (int) $discaMatriz[$rango]['O'];
             $serieM[] = $hombres;
             $serieF[] = $mujeres;
             $serieO[] = $otros;
+            $serieDiscaM[] = $discaH;
+            $serieDiscaF[] = $discaMuj;
+            $serieDiscaO[] = $discaOtros;
             $suma = $hombres + $mujeres + $otros;
+            $sumaDisca = $discaH + $discaMuj + $discaOtros;
             $total += $suma;
+            $totalDisca += $sumaDisca;
+            $rangosDisca[] = array(
+                'rango' => $rango,
+                'm'     => $discaH,
+                'f'     => $discaMuj,
+                'o'     => $discaOtros,
+                'total' => $sumaDisca,
+            );
             if ($suma > $mayorCantidad) {
                 $mayorCantidad = $suma;
                 $mayorRango = $rango;
+            }
+            if ($sumaDisca > $mayorDisca) {
+                $mayorDisca = $sumaDisca;
+                $mayorDiscaRango = $rango;
             }
         }
 
@@ -1667,6 +1732,18 @@ class PadronModel
         if ($sinEdad > 0) {
             $lineas[] = $this->formatoEntero($sinEdad) . ' afiliados quedaron sin edad válida a partir de FECNACIM.';
         }
+        if ($total > 0 && $totalDisca === 0) {
+            $lineas[] = 'Este corte no informa discapacidad en enrol1.';
+        } elseif ($totalDisca > 0) {
+            $pctDisca = round(($totalDisca / $total) * 100, 1);
+            $lineas[] = 'Con discapacidad: ' . $this->formatoEntero($totalDisca)
+                . ' afiliados (' . $this->formatoPorcentaje($pctDisca)
+                . ' del corte). Van dentro del total, no suman aparte.';
+            if ($mayorDisca > 0) {
+                $lineas[] = 'El rango con más discapacidad es ' . $mayorDiscaRango . ', con '
+                    . $this->formatoEntero($mayorDisca) . ' afiliados.';
+            }
+        }
 
         return array(
             'labels' => $rangos,
@@ -1674,6 +1751,15 @@ class PadronModel
                 array('sexo' => 'M', 'label' => 'Masculino', 'data' => $serieM),
                 array('sexo' => 'F', 'label' => 'Femenino', 'data' => $serieF),
                 array('sexo' => 'O', 'label' => 'Otros', 'data' => $serieO),
+                array('sexo' => 'DM', 'label' => 'Discapacidad masculina', 'data' => $serieDiscaM),
+                array('sexo' => 'DF', 'label' => 'Discapacidad femenina', 'data' => $serieDiscaF),
+                array('sexo' => 'DO', 'label' => 'Discapacidad otros', 'data' => $serieDiscaO),
+            ),
+            'discapacidad' => array(
+                'total'      => $totalDisca,
+                'porcentaje' => $total > 0 ? round(($totalDisca / $total) * 100, 1) : 0,
+                'rangos'     => $rangosDisca,
+                'sin_edad'   => $sinEdadDisca,
             ),
             'mayoritario' => array(
                 'rango'    => $mayorRango,
@@ -1757,6 +1843,11 @@ class PadronModel
         if ($obra !== '') {
             $sql .= ' AND OBRASOC = :obra';
             $params[':obra'] = $obra;
+            $archivo = $this->archivoVigente($obra, $origen['periodo']);
+            if ($archivo !== '') {
+                $sql .= ' AND TRIM(PFILE) = :archivo';
+                $params[':archivo'] = $archivo;
+            }
         }
         $sql .= ' GROUP BY LOCALIDAD ORDER BY total DESC LIMIT 10';
 
@@ -1778,6 +1869,20 @@ class PadronModel
         }
 
         $totalPeriodo = (int) $origen['total'];
+        if ($obra !== '' && isset($params[':archivo'])) {
+            $sqlTotal = "SELECT COUNT(*) AS total
+                           FROM vfpmedicos.t_padron
+                          WHERE PERIODO = :periodo
+                            AND LOCALIDAD <> ''
+                            AND OBRASOC = :obra
+                            AND TRIM(PFILE) = :archivo";
+            $stmtTotal = $this->db->prepare($sqlTotal);
+            $stmtTotal->execute($params);
+            $filaTotal = $stmtTotal->fetch();
+            if (is_array($filaTotal)) {
+                $totalPeriodo = (int) $this->valorFila($filaTotal, 'total');
+            }
+        }
         $lineas = array();
         if (count($labels) === 0 || $totalPeriodo === 0) {
             $lineas[] = 'No hay localidades informadas para esta obra social.';
@@ -1795,6 +1900,273 @@ class PadronModel
             'periodo' => $origen['periodo'],
             'labels'  => $labels,
             'data'    => $data,
+            'lineas'  => $lineas,
+        );
+    }
+
+    /**
+     * Discapacidad del archivo vigente del corte, agrupada por provincia.
+     * Si el período tiene varios PFILE, se usa el de fecha más nueva
+     * para no sumar dos veces a la misma persona.
+     */
+    public function getDiscapacidadPorZona($obrasoc, $periodo)
+    {
+        $obra = strtoupper(trim((string) $obrasoc));
+        $periodo = trim((string) $periodo);
+        if ($obra === '' || $periodo === '') {
+            return $this->respuestaZonasVacia(array('Seleccione una obra social para ver la discapacidad por zona.'));
+        }
+
+        $archivo = $this->archivoVigente($obra, $periodo);
+        $sql = "SELECT CASE
+                         WHEN PROVINCIA IS NULL OR TRIM(PROVINCIA) = '' THEN 'Sin zona'
+                         ELSE TRIM(PROVINCIA)
+                       END AS zona,
+                       TRIM(ENROL1) AS marca,
+                       COUNT(*) AS cantidad
+                  FROM vfpmedicos.t_padron
+                 WHERE OBRASOC = :obra
+                   AND PERIODO = :periodo
+                   AND ENROL1 IS NOT NULL
+                   AND TRIM(ENROL1) <> ''
+                   AND TRIM(ENROL1) <> '-'";
+        $params = array(
+            ':obra'    => $obra,
+            ':periodo' => $periodo,
+        );
+        if ($archivo !== '') {
+            $sql .= ' AND TRIM(PFILE) = :archivo';
+            $params[':archivo'] = $archivo;
+        }
+        $sql .= ' GROUP BY zona, TRIM(ENROL1)';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $filas = $stmt->fetchAll();
+
+        $porZona = array();
+        $totalZona = array();
+        $totalCondicion = array();
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $zona = trim((string) $this->valorFila($fila, 'zona'));
+                $condicion = $this->etiquetaCondicion($this->valorFila($fila, 'marca'));
+                $cantidad = (int) $this->valorFila($fila, 'cantidad');
+                if ($zona === '' || $condicion === '' || $cantidad <= 0) {
+                    continue;
+                }
+                if (!isset($porZona[$zona])) {
+                    $porZona[$zona] = array();
+                    $totalZona[$zona] = 0;
+                }
+                if (!isset($porZona[$zona][$condicion])) {
+                    $porZona[$zona][$condicion] = 0;
+                }
+                $porZona[$zona][$condicion] += $cantidad;
+                $totalZona[$zona] += $cantidad;
+                if (!isset($totalCondicion[$condicion])) {
+                    $totalCondicion[$condicion] = 0;
+                }
+                $totalCondicion[$condicion] += $cantidad;
+            }
+        }
+
+        $labels = array_keys($porZona);
+        usort($labels, function ($a, $b) use ($totalZona) {
+            if ($totalZona[$a] === $totalZona[$b]) {
+                return strcmp($a, $b);
+            }
+            return ($totalZona[$a] > $totalZona[$b]) ? -1 : 1;
+        });
+
+        $condiciones = array_keys($totalCondicion);
+        usort($condiciones, array($this, 'compararCondicion'));
+
+        $series = array();
+        $data = array();
+        foreach ($condiciones as $condicion) {
+            $valores = array();
+            foreach ($labels as $zona) {
+                $valores[] = isset($porZona[$zona][$condicion]) ? (int) $porZona[$zona][$condicion] : 0;
+            }
+            $series[] = array(
+                'label' => $condicion,
+                'data'  => $valores,
+                'color' => $this->colorCondicion($condicion),
+            );
+            if ($condicion === 'Discapacidad') {
+                $data = $valores;
+            }
+        }
+
+        $total = 0;
+        foreach ($totalCondicion as $cantidad) {
+            $total += (int) $cantidad;
+        }
+
+        $lineas = array();
+        if ($total === 0 || count($labels) === 0) {
+            $lineas[] = 'El corte ' . $periodo . ' no informa condiciones por provincia.';
+        } else {
+            $origen = $archivo !== '' ? ('el archivo ' . $archivo) : ('el corte ' . $periodo);
+            $partes = array();
+            foreach ($condiciones as $condicion) {
+                $partes[] = $condicion . ' ' . $this->formatoEntero($totalCondicion[$condicion]);
+            }
+            $lineas[] = 'En ' . $origen . ': ' . implode(', ', $partes) . '.';
+            $lineas[] = 'La zona con más condiciones es ' . $labels[0] . ', con '
+                . $this->formatoEntero($totalZona[$labels[0]]) . ' afiliados.';
+        }
+
+        return array(
+            'titulo'  => 'Condiciones por zona',
+            'campo'   => 'PROVINCIA',
+            'periodo' => $periodo,
+            'archivo' => $archivo,
+            'total'   => $total,
+            'labels'  => $labels,
+            'data'    => $data,
+            'series'  => $series,
+            'lineas'  => $lineas,
+        );
+    }
+
+    private function etiquetaCondicion($marca)
+    {
+        $texto = strtoupper(trim((string) $marca));
+        if ($texto === '' || $texto === '-' || $texto === 'COMUN' || $texto === 'COMUNES') {
+            return '';
+        }
+        if (strpos($texto, 'DISCAP') !== false) {
+            return 'Discapacidad';
+        }
+        if (strpos($texto, 'DIAB') !== false) {
+            return 'Diabetes';
+        }
+        if (strpos($texto, 'HIV') !== false) {
+            return 'HIV';
+        }
+        if (strpos($texto, 'ONCO') !== false) {
+            return 'Oncología';
+        }
+        if (strpos($texto, 'ALTO') !== false) {
+            return 'Alto valor';
+        }
+        if (strpos($texto, 'PMI') !== false || strpos($texto, 'MATERNO') !== false) {
+            return 'PMI';
+        }
+        return trim((string) $marca);
+    }
+
+    private function compararCondicion($a, $b)
+    {
+        $orden = array(
+            'Discapacidad' => 1,
+            'Diabetes'     => 2,
+            'HIV'          => 3,
+            'Oncología'    => 4,
+            'Alto valor'   => 5,
+            'PMI'          => 6,
+        );
+        $ordenA = isset($orden[$a]) ? $orden[$a] : 50;
+        $ordenB = isset($orden[$b]) ? $orden[$b] : 50;
+        if ($ordenA === $ordenB) {
+            return strcmp($a, $b);
+        }
+        return ($ordenA < $ordenB) ? -1 : 1;
+    }
+
+    private function colorCondicion($etiqueta)
+    {
+        $colores = array(
+            'Discapacidad' => '#00695c',
+            'Diabetes'     => '#ef6c00',
+            'HIV'          => '#c2185b',
+            'Oncología'    => '#6a1b9a',
+            'Alto valor'   => '#1565c0',
+            'PMI'          => '#00838f',
+        );
+        return isset($colores[$etiqueta]) ? $colores[$etiqueta] : '#546e7a';
+    }
+
+    private function archivoVigente($obra, $periodo)
+    {
+        $mapa = $this->mapaArchivosVigentes($obra);
+        $periodo = trim((string) $periodo);
+        return isset($mapa[$periodo]) ? $mapa[$periodo] : '';
+    }
+
+    private function mapaArchivosVigentes($obra)
+    {
+        $obra = strtoupper(trim((string) $obra));
+        if (isset($this->vigentesObra[$obra])) {
+            return $this->vigentesObra[$obra];
+        }
+
+        $sql = "SELECT TRIM(PERIODO) AS periodo, TRIM(PFILE) AS pfile
+                  FROM vfpmedicos.t_padron
+                 WHERE OBRASOC = :obra
+                   AND PERIODO <> ''
+                   AND PFILE IS NOT NULL
+                   AND TRIM(PFILE) <> ''
+                 GROUP BY TRIM(PERIODO), TRIM(PFILE)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array(':obra' => $obra));
+        $filas = $stmt->fetchAll();
+        $porPeriodo = array();
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+                $pfile = strtoupper(trim((string) $this->valorFila($fila, 'pfile')));
+                if ($periodo === '' || $pfile === '') {
+                    continue;
+                }
+                if (!isset($porPeriodo[$periodo])) {
+                    $porPeriodo[$periodo] = array();
+                }
+                $porPeriodo[$periodo][] = $pfile;
+            }
+        }
+
+        $mapa = array();
+        foreach ($porPeriodo as $periodo => $archivos) {
+            $mapa[$periodo] = $this->elegirArchivoVigente($archivos, $periodo);
+        }
+        $this->vigentesObra[$obra] = $mapa;
+        return $mapa;
+    }
+
+    private function elegirArchivoVigente($archivos, $periodo)
+    {
+        $fechados = array();
+        foreach ($archivos as $pfile) {
+            if ($this->archivoTieneFecha($pfile)) {
+                $fechados[] = $pfile;
+            }
+        }
+        $candidatos = count($fechados) > 0 ? $fechados : $archivos;
+        $mejor = '';
+        $ordenMejor = -1;
+        foreach ($candidatos as $pfile) {
+            $orden = $this->ordenArchivo($pfile, $periodo);
+            if ($orden > $ordenMejor || ($orden === $ordenMejor && strcmp($pfile, $mejor) > 0)) {
+                $ordenMejor = $orden;
+                $mejor = $pfile;
+            }
+        }
+        return $mejor;
+    }
+
+    private function respuestaZonasVacia($lineas)
+    {
+        return array(
+            'titulo'  => 'Discapacidad por zona',
+            'campo'   => 'PROVINCIA',
+            'periodo' => '',
+            'archivo' => '',
+            'total'   => 0,
+            'labels'  => array(),
+            'data'    => array(),
             'lineas'  => $lineas,
         );
     }
@@ -1912,6 +2284,766 @@ class PadronModel
         return $corte;
     }
 
+    /**
+     * Altas y bajas persona a persona entre cortes consecutivos de t_padron.
+     * Alta: documento que está en el mes y no estaba en el anterior.
+     * Baja: documento que estaba y no está.
+     * Discapacidad: enrol1 contiene DISCAP. COMUN de OSPACA no entra.
+     * Toma como máximo los últimos 12 movimientos del filtro.
+     */
+    private function movimientoPersonas($obrasoc, $anios)
+    {
+        $obra = strtoupper(trim((string) $obrasoc));
+        if ($obra === '') {
+            return array(
+                'disponible' => false,
+                'filas'      => array(),
+                'mensaje'    => 'Seleccione una obra social para ver altas y bajas por persona.',
+            );
+        }
+
+        if ($this->hayPadronPfile($obra)) {
+            return $this->movimientoPorArchivo($obra, $anios);
+        }
+
+        $personas = $this->leerMovimientoUnicos($obra);
+        if (count($personas) === 0) {
+            return array(
+                'disponible' => false,
+                'filas'      => array(),
+                'mensaje'    => 'Unicos no tiene afiliados de ' . $obra . '.',
+            );
+        }
+
+        $mapaAnios = array();
+        if (is_array($anios)) {
+            foreach ($anios as $anio) {
+                $mapaAnios[(int) $anio] = true;
+            }
+        }
+
+        $disca = $this->documentosConDiscapacidad($obra);
+        $periodos = array();
+        foreach ($personas as $persona) {
+            if ($persona['periodo'] !== '' && $this->anioDentro($persona['periodo'], $mapaAnios)) {
+                $periodos[$persona['periodo']] = true;
+            }
+            if ($persona['fbaja'] !== '' && $this->anioDentro($persona['fbaja'], $mapaAnios)) {
+                $periodos[$persona['fbaja']] = true;
+            }
+        }
+        $lista = array_keys($periodos);
+        usort($lista, array($this, 'compararPeriodoAsc'));
+        if (count($lista) === 0) {
+            return array(
+                'disponible' => false,
+                'filas'      => array(),
+                'mensaje'    => 'Unicos no tiene altas ni bajas de ' . $obra . ' en los años elegidos.',
+            );
+        }
+
+        $filas = array();
+        $stockAnterior = null;
+        foreach ($lista as $periodo) {
+            $altas = $this->bolsaMovimiento();
+            $bajas = $this->bolsaMovimiento();
+            $periodoDiscaBaja = $this->periodoDiscapacidadAnterior($disca['periodos'], $periodo);
+            foreach ($personas as $persona) {
+                if ($persona['periodo'] === $periodo) {
+                    $persona['disca'] = isset($disca['porPeriodo'][$periodo][$persona['dni']]);
+                    $persona['rango'] = $this->rangoPorNacimiento($persona['nacimiento'], $periodo);
+                    $this->sumarPersona($altas, $persona);
+                }
+                if ($persona['fbaja'] === $periodo) {
+                    $persona['disca'] = $periodoDiscaBaja !== '' && isset($disca['porPeriodo'][$periodoDiscaBaja][$persona['dni']]);
+                    $persona['rango'] = $this->rangoPorNacimiento($persona['nacimiento'], $periodo);
+                    $this->sumarPersona($bajas, $persona);
+                }
+            }
+
+            $stock = $this->stockUnicosHasta($personas, $periodo);
+            $saldo = (int) $altas['total'] - (int) $bajas['total'];
+            $variacion = null;
+            if ($stockAnterior !== null && $stockAnterior > 0) {
+                $variacion = round(($saldo / $stockAnterior) * 100, 2);
+            }
+
+            $filas[] = array(
+                'periodo'        => $periodo,
+                'contra'         => 'unicos',
+                'total'          => $stock,
+                'total_anterior' => $stockAnterior === null ? 0 : $stockAnterior,
+                'altas'          => $altas['total'],
+                'altas_disca'    => $altas['disca'],
+                'bajas'          => $bajas['total'],
+                'bajas_disca'    => $bajas['disca'],
+                'saldo'          => $saldo,
+                'variacion_pct'  => $variacion,
+                'altas_edad'     => $altas['rangos'],
+                'bajas_edad'     => $bajas['rangos'],
+            );
+            $stockAnterior = $stock;
+        }
+
+        return array(
+            'disponible' => true,
+            'fuente'     => 'unicos',
+            'filas'      => $filas,
+            'grafico'    => $this->graficoMovimientoReal($filas),
+            'mensaje'    => '',
+        );
+    }
+
+    private function hayPadronPfile($obra)
+    {
+        try {
+            $sql = "SELECT COUNT(*) AS cantidad
+                      FROM vfpmedicos.t_padron
+                     WHERE OBRASOC = :obra
+                       AND PFILE IS NOT NULL
+                       AND TRIM(PFILE) <> ''";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute(array(':obra' => $obra));
+            $fila = $stmt->fetch();
+            return (int) $this->valorFila($fila, 'cantidad') > 0;
+        } catch (Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Cruza cada PFILE con el archivo anterior.
+     * OA261030.DBF y OA261106.DBF pueden compartir el período 26/11:
+     * alta es el documento que está en el nuevo y no en el anterior,
+     * baja es el que estaba y no vino.
+     */
+    private function movimientoPorArchivo($obra, $anios)
+    {
+        $mapaAnios = array();
+        if (is_array($anios)) {
+            foreach ($anios as $anio) {
+                $mapaAnios[(int) $anio] = true;
+            }
+        }
+
+        $archivos = $this->leerArchivosPadron($obra);
+        if (count($archivos) === 0) {
+            return array(
+                'disponible' => false,
+                'fuente'     => 'pfile',
+                'filas'      => array(),
+                'mensaje'    => 'No hay archivos PFILE para ' . $obra . '.',
+            );
+        }
+
+        $ordenados = array();
+        foreach ($archivos as $clave => $personas) {
+            $partes = explode('|', $clave, 2);
+            $ordenados[] = array(
+                'periodo' => $partes[0],
+                'pfile'   => isset($partes[1]) ? $partes[1] : '',
+                'orden'   => $this->ordenArchivo(isset($partes[1]) ? $partes[1] : '', $partes[0]),
+                'personas'=> $personas,
+            );
+        }
+        usort($ordenados, array($this, 'compararArchivo'));
+        $ordenados = $this->quedarseConArchivosFechados($ordenados);
+
+        $indices = array();
+        $cantidad = count($ordenados);
+        for ($i = 0; $i < $cantidad; $i++) {
+            if ($this->anioDentro($ordenados[$i]['periodo'], $mapaAnios)) {
+                if (count($indices) === 0 && $i > 0) {
+                    $indices[] = $i - 1;
+                }
+                $indices[] = $i;
+            }
+        }
+        if (count($indices) > 13) {
+            $indices = array_slice($indices, -13);
+        }
+        if (count($indices) < 2) {
+            $unico = count($ordenados) === 1 ? $ordenados[0]['pfile'] : '';
+            $aviso = 'Hay un solo archivo con PFILE'
+                . ($unico !== '' ? ' (' . $unico . ')' : '')
+                . '. Cuando se cargue el siguiente del mismo período se ven las altas y las bajas.';
+            return array(
+                'disponible' => false,
+                'fuente'     => 'pfile',
+                'filas'      => array(),
+                'mensaje'    => $aviso,
+            );
+        }
+
+        $filas = array();
+        $stockAnterior = null;
+        $vistos = count($indices);
+        for ($n = 1; $n < $vistos; $n++) {
+            $anterior = $ordenados[$indices[$n - 1]];
+            $actual = $ordenados[$indices[$n]];
+            $cruce = $this->cruzarMapas($actual['personas'], $anterior['personas'], $actual['periodo']);
+            $stock = count($actual['personas']);
+            $saldo = (int) $cruce['altas']['total'] - (int) $cruce['bajas']['total'];
+            $variacion = null;
+            if ($stockAnterior !== null && $stockAnterior > 0) {
+                $variacion = round(($saldo / $stockAnterior) * 100, 2);
+            }
+            $filas[] = array(
+                'periodo'        => $actual['periodo'],
+                'pfile'          => $actual['pfile'],
+                'contra'         => $anterior['pfile'],
+                'total'          => $stock,
+                'total_anterior' => $stockAnterior === null ? count($anterior['personas']) : $stockAnterior,
+                'altas'          => $cruce['altas']['total'],
+                'altas_disca'    => $cruce['altas']['disca'],
+                'bajas'          => $cruce['bajas']['total'],
+                'bajas_disca'    => $cruce['bajas']['disca'],
+                'saldo'          => $saldo,
+                'variacion_pct'  => $variacion,
+                'altas_edad'     => $cruce['altas']['rangos'],
+                'bajas_edad'     => $cruce['bajas']['rangos'],
+            );
+            $stockAnterior = $stock;
+        }
+
+        return array(
+            'disponible' => true,
+            'fuente'     => 'pfile',
+            'filas'      => $filas,
+            'grafico'    => $this->graficoMovimientoReal($filas),
+            'mensaje'    => '',
+        );
+    }
+
+    private function leerArchivosPadron($obra)
+    {
+        $sql = "SELECT TRIM(PERIODO) AS periodo,
+                       TRIM(PFILE) AS pfile,
+                       NRODOC AS dni,
+                       FECNACIM AS nacimiento,
+                       SEXO AS sexo,
+                       CASE WHEN UPPER(TRIM(ENROL1)) LIKE '%DISCAP%' THEN 1 ELSE 0 END AS disca
+                  FROM vfpmedicos.t_padron
+                 WHERE OBRASOC = :obra
+                   AND PFILE IS NOT NULL
+                   AND TRIM(PFILE) <> ''";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array(':obra' => $obra));
+        $filas = $stmt->fetchAll();
+        $archivos = array();
+        if (!is_array($filas)) {
+            return $archivos;
+        }
+        foreach ($filas as $fila) {
+            $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+            $pfile = strtoupper(trim((string) $this->valorFila($fila, 'pfile')));
+            $dni = (int) $this->valorFila($fila, 'dni');
+            if ($this->ordenPeriodo($periodo) <= 0 || $pfile === '' || $dni <= 0) {
+                continue;
+            }
+            $clave = $periodo . '|' . $pfile;
+            if (!isset($archivos[$clave])) {
+                $archivos[$clave] = array();
+            }
+            $archivos[$clave][$dni] = array(
+                'disca'      => (int) $this->valorFila($fila, 'disca') === 1,
+                'sexo'       => $this->sexoClave($this->valorFila($fila, 'sexo')),
+                'nacimiento' => $this->valorFila($fila, 'nacimiento'),
+                'rango'      => '',
+            );
+        }
+        return $archivos;
+    }
+
+    private function cruzarMapas($actual, $anterior, $periodo)
+    {
+        $altas = $this->bolsaMovimiento();
+        $bajas = $this->bolsaMovimiento();
+        foreach ($actual as $dni => $persona) {
+            if (!isset($anterior[$dni])) {
+                $persona['rango'] = $this->rangoPorNacimiento($persona['nacimiento'], $periodo);
+                $this->sumarPersona($altas, $persona);
+            }
+        }
+        foreach ($anterior as $dni => $persona) {
+            if (!isset($actual[$dni])) {
+                $persona['rango'] = $this->rangoPorNacimiento($persona['nacimiento'], $periodo);
+                $this->sumarPersona($bajas, $persona);
+            }
+        }
+        return array('altas' => $altas, 'bajas' => $bajas);
+    }
+
+    private function ordenArchivo($pfile, $periodo)
+    {
+        $nombre = strtoupper(trim((string) $pfile));
+        if (preg_match('/(\d{2})(\d{2})(\d{2})(?:\.DBF)?$/', $nombre, $partes)) {
+            $mes = (int) $partes[2];
+            $dia = (int) $partes[3];
+            if ($mes >= 1 && $mes <= 12 && $dia >= 1 && $dia <= 31) {
+                return ((2000 + (int) $partes[1]) * 10000) + ($mes * 100) + $dia;
+            }
+        }
+        if (preg_match('/(\d{2})(\d{2})(?:\.DBF)?$/', $nombre, $partes)) {
+            $mes = (int) $partes[2];
+            if ($mes >= 1 && $mes <= 12) {
+                return ((2000 + (int) $partes[1]) * 10000) + ($mes * 100);
+            }
+        }
+        return $this->ordenPeriodo($periodo) * 100;
+    }
+
+    private function archivoTieneFecha($pfile)
+    {
+        $nombre = strtoupper(trim((string) $pfile));
+        if (preg_match('/(\d{2})(\d{2})(\d{2})(?:\.DBF)?$/', $nombre, $partes)) {
+            $mes = (int) $partes[2];
+            $dia = (int) $partes[3];
+            return $mes >= 1 && $mes <= 12 && $dia >= 1 && $dia <= 31;
+        }
+        if (preg_match('/(\d{2})(\d{2})(?:\.DBF)?$/', $nombre, $partes)) {
+            $mes = (int) $partes[2];
+            return $mes >= 1 && $mes <= 12;
+        }
+        return false;
+    }
+
+    private function quedarseConArchivosFechados($archivos)
+    {
+        $fechados = array();
+        foreach ($archivos as $archivo) {
+            if ($this->archivoTieneFecha($archivo['pfile'])) {
+                $fechados[] = $archivo;
+            }
+        }
+        if (count($fechados) === 0) {
+            return $archivos;
+        }
+        return $fechados;
+    }
+
+    private function compararArchivo($a, $b)
+    {
+        if ($a['orden'] === $b['orden']) {
+            return strcmp($a['pfile'], $b['pfile']);
+        }
+        if ($a['orden'] < $b['orden']) {
+            return -1;
+        }
+        return 1;
+    }
+
+    private function nombreCortoArchivo($pfile)
+    {
+        $nombre = strtoupper(trim((string) $pfile));
+        if (substr($nombre, -4) === '.DBF') {
+            $nombre = substr($nombre, 0, -4);
+        }
+        return $nombre;
+    }
+
+    private function anioDentro($periodo, $mapaAnios)
+    {
+        if (count($mapaAnios) === 0) {
+            return true;
+        }
+        $orden = $this->ordenPeriodo($periodo);
+        if ($orden <= 0) {
+            return false;
+        }
+        return isset($mapaAnios[(int) floor($orden / 100)]);
+    }
+
+    private function leerMovimientoUnicos($obra)
+    {
+        $sql = "SELECT TRIM(PERIODO) AS periodo,
+                       TRIM(FBAJA) AS fbaja,
+                       NRODOC AS dni,
+                       FECNACIM AS nacimiento,
+                       SEXO AS sexo
+                  FROM vfpmedicos.unicos
+                 WHERE OBRASOC = :obra";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array(':obra' => $obra));
+        $filas = $stmt->fetchAll();
+        $lista = array();
+        if (!is_array($filas)) {
+            return $lista;
+        }
+        foreach ($filas as $fila) {
+            $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+            $fbaja = trim((string) $this->valorFila($fila, 'fbaja'));
+            if ($this->ordenPeriodo($periodo) <= 0) {
+                $periodo = '';
+            }
+            if ($this->ordenPeriodo($fbaja) <= 0) {
+                $fbaja = '';
+            }
+            if ($periodo === '' && $fbaja === '') {
+                continue;
+            }
+            $lista[] = array(
+                'periodo'    => $periodo,
+                'fbaja'      => $fbaja,
+                'dni'        => (int) $this->valorFila($fila, 'dni'),
+                'nacimiento' => $this->valorFila($fila, 'nacimiento'),
+                'sexo'       => $this->sexoClave($this->valorFila($fila, 'sexo')),
+                'disca'      => false,
+                'rango'      => '',
+            );
+        }
+        return $lista;
+    }
+
+    private function documentosConDiscapacidad($obra)
+    {
+        $sql = "SELECT TRIM(PERIODO) AS periodo, NRODOC AS dni
+                  FROM vfpmedicos.t_padron
+                 WHERE OBRASOC = :obra
+                   AND UPPER(TRIM(ENROL1)) LIKE '%DISCAP%'";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array(':obra' => $obra));
+        $filas = $stmt->fetchAll();
+        $porPeriodo = array();
+        $periodos = array();
+        if (is_array($filas)) {
+            foreach ($filas as $fila) {
+                $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+                $dni = (int) $this->valorFila($fila, 'dni');
+                if ($this->ordenPeriodo($periodo) <= 0 || $dni <= 0) {
+                    continue;
+                }
+                if (!isset($porPeriodo[$periodo])) {
+                    $porPeriodo[$periodo] = array();
+                    $periodos[] = $periodo;
+                }
+                $porPeriodo[$periodo][$dni] = true;
+            }
+        }
+        usort($periodos, array($this, 'compararPeriodoAsc'));
+        return array(
+            'porPeriodo' => $porPeriodo,
+            'periodos'   => $periodos,
+        );
+    }
+
+    private function periodoDiscapacidadAnterior($periodos, $periodo)
+    {
+        $orden = $this->ordenPeriodo($periodo);
+        $mejor = '';
+        $ordenMejor = -1;
+        foreach ($periodos as $candidato) {
+            $ordenCandidato = $this->ordenPeriodo($candidato);
+            if ($ordenCandidato < $orden && $ordenCandidato > $ordenMejor) {
+                $ordenMejor = $ordenCandidato;
+                $mejor = $candidato;
+            }
+        }
+        return $mejor;
+    }
+
+    private function stockUnicosHasta($personas, $periodo)
+    {
+        $orden = $this->ordenPeriodo($periodo);
+        $total = 0;
+        foreach ($personas as $persona) {
+            $ordenAlta = $this->ordenPeriodo($persona['periodo']);
+            if ($ordenAlta <= 0 || $ordenAlta > $orden) {
+                continue;
+            }
+            $ordenBaja = $this->ordenPeriodo($persona['fbaja']);
+            if ($persona['fbaja'] !== '' && $ordenBaja > 0 && $ordenBaja <= $orden) {
+                continue;
+            }
+            $total++;
+        }
+        return $total;
+    }
+
+    private function graficoMovimientoReal($filas)
+    {
+        $labels = array();
+        $totales = array();
+        $altas = array();
+        $bajas = array();
+        $altasDisca = array();
+        $bajasDisca = array();
+        $variacion = array();
+
+        $archivos = array();
+        $contra = array();
+        $fuente = 'unicos';
+        foreach ($filas as $fila) {
+            $archivo = isset($fila['pfile']) ? trim((string) $fila['pfile']) : '';
+            if ($archivo !== '') {
+                $fuente = 'pfile';
+                $labels[] = $fila['periodo'] . ' ' . $this->nombreCortoArchivo($archivo);
+            } else {
+                $labels[] = $fila['periodo'];
+            }
+            $archivos[] = $archivo;
+            $contra[] = isset($fila['contra']) ? $fila['contra'] : '';
+            $totales[] = (int) $fila['total'];
+            $altas[] = (int) $fila['altas'];
+            $bajas[] = (int) $fila['bajas'];
+            $altasDisca[] = (int) $fila['altas_disca'];
+            $bajasDisca[] = (int) $fila['bajas_disca'];
+            $variacion[] = $fila['variacion_pct'];
+        }
+
+        return array(
+            'reales'        => true,
+            'fuente'        => $fuente,
+            'archivos'      => $archivos,
+            'contra'        => $contra,
+            'labels'        => $labels,
+            'totales'       => $totales,
+            'altas'         => $altas,
+            'bajas'         => $bajas,
+            'altas_disca'   => $altasDisca,
+            'bajas_disca'   => $bajasDisca,
+            'variacion_pct' => $variacion,
+        );
+    }
+
+    private function periodosParaMovimiento($obra, $anios)
+    {
+        $mapaAnios = array();
+        if (is_array($anios)) {
+            foreach ($anios as $anio) {
+                $mapaAnios[(int) $anio] = true;
+            }
+        }
+
+        $lista = $this->listarPeriodosPadron($obra);
+        usort($lista, array($this, 'compararPeriodoAsc'));
+
+        $elegidos = array();
+        $anterior = '';
+        foreach ($lista as $periodo) {
+            $orden = $this->ordenPeriodo($periodo);
+            $anio = (int) floor($orden / 100);
+            if (count($mapaAnios) > 0 && !isset($mapaAnios[$anio])) {
+                $anterior = $periodo;
+                continue;
+            }
+            if (count($elegidos) === 0 && $anterior !== '') {
+                $elegidos[] = $anterior;
+            }
+            $elegidos[] = $periodo;
+            $anterior = $periodo;
+        }
+
+        if (count($elegidos) > 13) {
+            $elegidos = array_values(array_slice($elegidos, -13));
+        }
+
+        return $elegidos;
+    }
+
+    private function leerPersonasPadron($obra, $periodos)
+    {
+        $params = array(':obra' => $obra);
+        $marcas = array();
+        $i = 0;
+        foreach ($periodos as $periodo) {
+            $clave = ':p' . $i;
+            $marcas[] = $clave;
+            $params[$clave] = $periodo;
+            $i++;
+        }
+
+        $sql = "SELECT TRIM(PERIODO) AS periodo,
+                       NRODOC AS dni,
+                       CASE WHEN UPPER(TRIM(ENROL1)) LIKE '%DISCAP%' THEN 1 ELSE 0 END AS disca,
+                       FECNACIM AS nacimiento,
+                       SEXO AS sexo
+                  FROM vfpmedicos.t_padron
+                 WHERE OBRASOC = :obra
+                   AND PERIODO IN (" . implode(', ', $marcas) . ")";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $filas = $stmt->fetchAll();
+
+        $mapas = array();
+        if (!is_array($filas)) {
+            return $mapas;
+        }
+
+        foreach ($filas as $fila) {
+            $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+            $dni = (int) $this->valorFila($fila, 'dni');
+            if ($periodo === '' || $dni <= 0) {
+                continue;
+            }
+            if (!isset($mapas[$periodo])) {
+                $mapas[$periodo] = array();
+            }
+            $mapas[$periodo][$dni] = array(
+                'disca' => (int) $this->valorFila($fila, 'disca') === 1,
+                'sexo'  => $this->sexoClave($this->valorFila($fila, 'sexo')),
+                'rango' => $this->rangoPorNacimiento($this->valorFila($fila, 'nacimiento'), $periodo),
+            );
+        }
+
+        return $mapas;
+    }
+
+    private function cruzarCortes($actual, $anterior, $mapaActual, $mapaAnterior)
+    {
+        $altas = $this->bolsaMovimiento();
+        $bajas = $this->bolsaMovimiento();
+
+        foreach ($mapaActual as $dni => $persona) {
+            if (!isset($mapaAnterior[$dni])) {
+                $this->sumarPersona($altas, $persona);
+            }
+        }
+        foreach ($mapaAnterior as $dni => $persona) {
+            if (!isset($mapaActual[$dni])) {
+                $this->sumarPersona($bajas, $persona);
+            }
+        }
+
+        $totalAnterior = count($mapaAnterior);
+        $saldo = (int) $altas['total'] - (int) $bajas['total'];
+        $variacion = null;
+        if ($totalAnterior > 0) {
+            $variacion = round(($saldo / $totalAnterior) * 100, 2);
+        }
+
+        return array(
+            'periodo'       => $actual,
+            'contra'        => $anterior,
+            'total'         => count($mapaActual),
+            'total_anterior'=> $totalAnterior,
+            'altas'         => $altas['total'],
+            'altas_disca'   => $altas['disca'],
+            'bajas'         => $bajas['total'],
+            'bajas_disca'   => $bajas['disca'],
+            'saldo'         => $saldo,
+            'variacion_pct' => $variacion,
+            'altas_edad'    => $altas['rangos'],
+            'bajas_edad'    => $bajas['rangos'],
+        );
+    }
+
+    private function bolsaMovimiento()
+    {
+        $rangos = array();
+        foreach ($this->rangosEtarios() as $rango) {
+            $rangos[] = array(
+                'rango'   => $rango,
+                'm'       => 0,
+                'f'       => 0,
+                'o'       => 0,
+                'disca_m' => 0,
+                'disca_f' => 0,
+                'disca_o' => 0,
+            );
+        }
+
+        return array(
+            'total'  => 0,
+            'disca'  => 0,
+            'rangos' => $rangos,
+        );
+    }
+
+    private function sumarPersona(&$bolsa, $persona)
+    {
+        $bolsa['total']++;
+        $sexo = isset($persona['sexo']) ? $persona['sexo'] : 'O';
+        $rango = isset($persona['rango']) ? $persona['rango'] : '';
+        $disca = !empty($persona['disca']);
+        if ($disca) {
+            $bolsa['disca']++;
+        }
+
+        $indice = null;
+        foreach ($bolsa['rangos'] as $i => $fila) {
+            if ($fila['rango'] === $rango) {
+                $indice = $i;
+                break;
+            }
+        }
+        if ($indice === null) {
+            return;
+        }
+
+        if ($sexo === 'M') {
+            $bolsa['rangos'][$indice]['m']++;
+            if ($disca) {
+                $bolsa['rangos'][$indice]['disca_m']++;
+            }
+        } elseif ($sexo === 'F') {
+            $bolsa['rangos'][$indice]['f']++;
+            if ($disca) {
+                $bolsa['rangos'][$indice]['disca_f']++;
+            }
+        } else {
+            $bolsa['rangos'][$indice]['o']++;
+            if ($disca) {
+                $bolsa['rangos'][$indice]['disca_o']++;
+            }
+        }
+    }
+
+    private function sexoClave($sexo)
+    {
+        $texto = strtoupper(trim((string) $sexo));
+        if ($texto === 'M' || $texto === 'MASCULINO' || $texto === 'H' || $texto === 'V' || $texto === '1') {
+            return 'M';
+        }
+        if ($texto === 'F' || $texto === 'FEMENINO' || $texto === '2') {
+            return 'F';
+        }
+        return 'O';
+    }
+
+    private function rangoPorNacimiento($fechaNac, $periodo)
+    {
+        $edad = $this->edadAlCierre($fechaNac, $periodo);
+        if ($edad === null) {
+            return '';
+        }
+        if ($edad <= 14) {
+            return '0-14 (Pediátrico)';
+        }
+        if ($edad <= 30) {
+            return '15-30 (Jóvenes)';
+        }
+        if ($edad <= 50) {
+            return '31-50 (Adultos)';
+        }
+        if ($edad <= 64) {
+            return '51-64 (Adultos Mayores)';
+        }
+        return '65+ (Pasivos)';
+    }
+
+    private function edadAlCierre($fechaNac, $periodo)
+    {
+        $texto = trim((string) $fechaNac);
+        if ($texto === '' || strpos($texto, '0000-00-00') === 0) {
+            return null;
+        }
+        $nac = strtotime(substr($texto, 0, 10));
+        $corte = strtotime($this->fechaCorteDesdePeriodo($periodo));
+        if ($nac === false || $corte === false || $nac > $corte) {
+            return null;
+        }
+        $edad = (int) date('Y', $corte) - (int) date('Y', $nac);
+        $cumple = mktime(0, 0, 0, (int) date('n', $nac), (int) date('j', $nac), (int) date('Y', $corte));
+        if ($cumple > $corte) {
+            $edad--;
+        }
+        if ($edad < 0 || $edad > 120) {
+            return null;
+        }
+        return $edad;
+    }
+
     private function filtroCorteActivo($obrasoc, $periodo)
     {
         $sql = ' WHERE PERIODO = :periodo ';
@@ -1920,6 +3052,11 @@ class PadronModel
         if ($obra !== '') {
             $sql .= ' AND OBRASOC = :obra ';
             $params[':obra'] = $obra;
+            $archivo = $this->archivoVigente($obra, $params[':periodo']);
+            if ($archivo !== '') {
+                $sql .= ' AND TRIM(PFILE) = :archivoVigente ';
+                $params[':archivoVigente'] = $archivo;
+            }
         }
         return array('sql' => $sql, 'params' => $params);
     }

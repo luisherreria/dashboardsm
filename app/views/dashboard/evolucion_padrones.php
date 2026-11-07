@@ -265,7 +265,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         <i class="fa-solid fa-chart-column text-[#1565c0]"></i>
         Movimiento y tasa de variación
     </div>
-    <p class="mb-3 text-xs text-slate-400">El volumen (total, altas y bajas) usa el eje izquierdo. La línea naranja es la variación porcentual y usa el eje derecho.</p>
+    <p id="leyendaMovimiento" class="mb-3 text-xs text-slate-400">El volumen (total, altas y bajas) usa el eje izquierdo. La línea naranja es la variación porcentual y usa el eje derecho.</p>
     <div class="relative h-80">
         <canvas id="graficoMovimiento"></canvas>
     </div>
@@ -285,6 +285,18 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             </button>
         </div>
     </div>
+</section>
+
+<section class="mb-4 rounded-2xl bg-white p-4 shadow-sm">
+    <div class="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-800">
+        <i class="fa-solid fa-right-left text-[#1565c0]"></i>
+        Altas y bajas del padrón
+    </div>
+    <p class="mb-3 text-xs text-slate-500">Los números salen de unicos. Altas: PERIODO de ese mes. Bajas: FBAJA de ese mismo mes. La edad sale de la fecha de nacimiento de unicos.</p>
+    <div id="tablaMovimientoReal" class="overflow-x-auto text-xs text-slate-700">
+        <p class="text-slate-500">El cruce se calcula al actualizar el filtro.</p>
+    </div>
+    <div id="detalleEdadMovimiento" class="mt-4"></div>
 </section>
 
 <section class="mb-4 rounded-2xl bg-white p-4 shadow-sm">
@@ -359,15 +371,16 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                 <i class="fa-solid fa-chart-bar text-[#1565c0]"></i>
                 Pirámide por edad y sexo
             </div>
-            <div class="relative h-72">
+            <div class="relative h-96">
                 <canvas id="graficoEtario"></canvas>
             </div>
+            <div id="tablaDiscapacidadEtaria" class="mt-3 overflow-x-auto text-xs text-slate-700"></div>
             <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
                     <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
                     Análisis del Indicador y Diagnóstico
                 </div>
-                <p class="mb-2 text-xs text-slate-600" id="descTecnica_etario">Distribuye la cartera por edad al cierre del período y por sexo. Los rangos son pediátrico, jóvenes, adultos, adultos mayores y pasivos.</p>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_etario">Distribuye la cartera por edad al cierre del período y por sexo. Las barras de discapacidad son un subconjunto del mismo rango: enrol1 que contiene DISCAP. Población general no se cuenta ahí.</p>
                 <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_etario">
                     <p>El diagnóstico se calcula al actualizar el filtro.</p>
                 </div>
@@ -418,6 +431,26 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             </div>
         </section>
     </div>
+    <section class="rounded-2xl bg-white p-4 shadow-sm">
+        <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <i class="fa-solid fa-wheelchair text-[#00695c]"></i>
+            Condiciones por zona
+        </div>
+        <p class="mb-3 text-xs text-slate-500">Discapacidad, diabetes, HIV, oncología, alto valor y el resto de las condiciones que traiga el padrón, por provincia. Se usa el archivo más nuevo del período. Población general no entra.</p>
+        <div class="relative h-[28rem]">
+            <canvas id="graficoZonas"></canvas>
+        </div>
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div class="mb-1 flex items-center text-xs font-bold uppercase text-slate-500">
+                <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                Análisis del Indicador y Diagnóstico
+            </div>
+            <p class="mb-2 text-xs text-slate-600" id="descTecnica_zonas">La zona es la provincia del padrón vigente. Cada color es una condición de enrol1. Población general queda afuera.</p>
+            <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_zonas">
+                <p>El diagnóstico se calcula al actualizar el filtro.</p>
+            </div>
+        </div>
+    </section>
 </div>
 
 <div id="modalEvolucionEspeciales" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/45 p-4">
@@ -804,6 +837,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
     var chartEtario = null;
     var chartPlanes = null;
     var chartLocalidades = null;
+    var chartZonas = null;
     var chartEspeciales = null;
     var tabla = null;
     var contextoDiagnosticoIa = '';
@@ -959,53 +993,104 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         pintarMarcas(bloque);
     }
 
+    function leyendaMovimiento(reales, fuente) {
+        var nodo = document.getElementById('leyendaMovimiento');
+        var tecnica = document.getElementById('descTecnica_movimiento');
+        if (fuente === 'pfile') {
+            if (nodo) {
+                nodo.textContent = 'Cada barra es un archivo PFILE cruzado con el archivo anterior, aunque compartan el período. Alta: documento que está en el archivo nuevo. Baja: documento que estaba en el anterior y no vino.';
+            }
+            if (tecnica) {
+                tecnica.textContent = 'El nombre del archivo está en t_padron.PFILE, por ejemplo OA261030.DBF y OA261106.DBF dentro de 26/11. La discapacidad sale de enrol1 del archivo donde la persona está.';
+            }
+            return;
+        }
+        if (reales) {
+            if (nodo) {
+                nodo.textContent = 'Sale de unicos, del mismo período. Alta es PERIODO igual a ese mes. Baja es FBAJA igual a ese mes. Teal y naranja son las que tienen discapacidad en el padrón.';
+            }
+            if (tecnica) {
+                tecnica.textContent = 'Un mismo período puede tener altas y bajas juntas. En OSPACA las bajas de 26/11 son las que salieron entre los padrones de ese mes. La discapacidad de una baja se busca en el padrón del mes anterior.';
+            }
+            return;
+        }
+        if (nodo) {
+            nodo.textContent = 'El volumen (total, altas y bajas) usa el eje izquierdo. La línea naranja es la variación porcentual y usa el eje derecho. Elegí una obra para ver el cruce real de personas.';
+        }
+        if (tecnica) {
+            tecnica.textContent = 'Monitorea la rotación mensual de la cartera, contrastando el volumen de altas y bajas frente a la tasa neta de crecimiento o contracción.';
+        }
+    }
+
     function dibujarMovimiento(bloque) {
         if (chartMovimiento) {
             chartMovimiento.destroy();
         }
+        var reales = !!(bloque && bloque.reales);
+        leyendaMovimiento(reales, bloque && bloque.fuente ? bloque.fuente : '');
+        var datasets = [];
+        if (!reales) {
+            datasets.push({
+                type: 'bar',
+                label: 'Total',
+                data: bloque.totales,
+                backgroundColor: 'rgba(21,101,192,0.35)',
+                borderColor: '#1565c0',
+                borderWidth: 1,
+                yAxisID: 'y',
+                order: 3
+            });
+        }
+        datasets.push({
+            type: 'bar',
+            label: 'Altas',
+            data: bloque.altas,
+            backgroundColor: 'rgba(46,125,50,0.85)',
+            yAxisID: 'y',
+            order: 2
+        });
+        datasets.push({
+            type: 'bar',
+            label: 'Bajas',
+            data: bloque.bajas,
+            backgroundColor: 'rgba(198,40,40,0.8)',
+            yAxisID: 'y',
+            order: 2
+        });
+        if (reales) {
+            datasets.push({
+                type: 'bar',
+                label: 'Altas con discapacidad',
+                data: bloque.altas_disca,
+                backgroundColor: '#00695c',
+                yAxisID: 'y',
+                order: 2
+            });
+            datasets.push({
+                type: 'bar',
+                label: 'Bajas con discapacidad',
+                data: bloque.bajas_disca,
+                backgroundColor: '#ef6c00',
+                yAxisID: 'y',
+                order: 2
+            });
+        }
+        datasets.push({
+            type: 'line',
+            label: reales ? 'Saldo %' : 'Variación %',
+            data: bloque.variacion_pct,
+            borderColor: reales ? '#5e35b1' : '#ef6c00',
+            backgroundColor: reales ? '#5e35b1' : '#ef6c00',
+            tension: 0.25,
+            spanGaps: false,
+            pointRadius: 3,
+            yAxisID: 'y1',
+            order: 1
+        });
         chartMovimiento = new Chart(document.getElementById('graficoMovimiento'), {
             data: {
                 labels: bloque.labels,
-                datasets: [
-                    {
-                        type: 'bar',
-                        label: 'Total',
-                        data: bloque.totales,
-                        backgroundColor: 'rgba(21,101,192,0.35)',
-                        borderColor: '#1565c0',
-                        borderWidth: 1,
-                        yAxisID: 'y',
-                        order: 3
-                    },
-                    {
-                        type: 'bar',
-                        label: 'Altas',
-                        data: bloque.altas,
-                        backgroundColor: 'rgba(46,125,50,0.85)',
-                        yAxisID: 'y',
-                        order: 2
-                    },
-                    {
-                        type: 'bar',
-                        label: 'Bajas',
-                        data: bloque.bajas,
-                        backgroundColor: 'rgba(198,40,40,0.8)',
-                        yAxisID: 'y',
-                        order: 2
-                    },
-                    {
-                        type: 'line',
-                        label: 'Variación %',
-                        data: bloque.variacion_pct,
-                        borderColor: '#ef6c00',
-                        backgroundColor: '#ef6c00',
-                        tension: 0.25,
-                        spanGaps: false,
-                        pointRadius: 3,
-                        yAxisID: 'y1',
-                        order: 1
-                    }
-                ]
+                datasets: datasets
             },
             options: {
                 responsive: true,
@@ -1145,6 +1230,92 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         return 'Estable';
     }
 
+    function diagnosticarMovimientoReal(bloque, filasTabla, caja) {
+        var labels = bloque.labels || [];
+        var altas = bloque.altas || [];
+        var bajas = bloque.bajas || [];
+        var altasDisca = bloque.altas_disca || [];
+        var bajasDisca = bloque.bajas_disca || [];
+        var totales = bloque.totales || [];
+        var ultimo = labels.length - 1;
+        var periodo = labels[ultimo];
+        var nAltas = Number(altas[ultimo]) || 0;
+        var nBajas = Number(bajas[ultimo]) || 0;
+        var nAltasDisca = Number(altasDisca[ultimo]) || 0;
+        var nBajasDisca = Number(bajasDisca[ultimo]) || 0;
+        var porArchivo = bloque.fuente === 'pfile';
+        var estado;
+        if (porArchivo) {
+            var archivo = (bloque.archivos && bloque.archivos[ultimo]) ? bloque.archivos[ultimo] : periodo;
+            var anterior = (bloque.contra && bloque.contra[ultimo]) ? bloque.contra[ultimo] : 'el archivo anterior';
+            estado = archivo + ' contra ' + anterior + ': ' + fmtEntero(nAltas) + ' altas y ' + fmtEntero(nBajas) + ' bajas.';
+        } else {
+            estado = 'En ' + periodo + ', unicos marca ' + fmtEntero(nAltas) + ' altas con ese período y ' + fmtEntero(nBajas) + ' bajas del mismo período.';
+        }
+        if (nAltasDisca > 0 || nBajasDisca > 0) {
+            estado += ' Con discapacidad: ' + fmtEntero(nAltasDisca) + ' de las altas y ' + fmtEntero(nBajasDisca) + ' de las bajas.';
+        } else if (nBajas > 0 && !porArchivo) {
+            estado += ' Esas bajas ya no están en el padrón del mes, así que no se ve si tenían discapacidad.';
+        }
+
+        var picoAltas = null;
+        var picoBajas = null;
+        var i;
+        for (i = 0; i < labels.length; i++) {
+            if (picoAltas === null || Number(altas[i]) > picoAltas.valor) {
+                picoAltas = { periodo: labels[i], valor: Number(altas[i]) || 0 };
+            }
+            if (picoBajas === null || Number(bajas[i]) > picoBajas.valor) {
+                picoBajas = { periodo: labels[i], valor: Number(bajas[i]) || 0 };
+            }
+        }
+        var textoAltas = picoAltas && picoAltas.valor > 0
+            ? 'Mayor pico de altas en unicos: ' + picoAltas.periodo + ', con ' + fmtEntero(picoAltas.valor) + ' afiliados.'
+            : 'Unicos no marca altas en el rango elegido.';
+        var textoBajas = picoBajas && picoBajas.valor > 0
+            ? 'Mayor pico de bajas en unicos: ' + picoBajas.periodo + ', con ' + fmtEntero(picoBajas.valor) + ' afiliados.'
+            : 'Unicos no marca bajas en el rango elegido.';
+
+        var alcance = 'la obra elegida';
+        if (filasTabla && filasTabla.length && filasTabla[0].obra) {
+            alcance = filasTabla[0].obra;
+        }
+        var inicioTotal = Number(totales[0]) || 0;
+        var cierreTotal = Number(totales[ultimo]) || 0;
+        var tendencia = etiquetaTendencia(inicioTotal, cierreTotal);
+        var textoTendencia = 'Activos según unicos: ' + fmtEntero(cierreTotal) + ' en ' + periodo + '.';
+
+        var saldo = nAltas - nBajas;
+        var claseEstado = 'bg-slate-200 text-slate-700';
+        if (saldo > 0) {
+            claseEstado = 'bg-emerald-100 text-emerald-800';
+        } else if (saldo < 0) {
+            claseEstado = 'bg-red-100 text-red-800';
+        }
+
+        caja.innerHTML = ''
+            + '<p>' + escaparHtml(estado) + '</p>'
+            + '<div class="flex flex-wrap gap-2">'
+            + '<span class="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ' + claseEstado + '">' + escaparHtml(periodo + ' · saldo ' + fmtFirmado(saldo)) + '</span>'
+            + '<span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">' + escaparHtml('Altas ' + fmtEntero(nAltas)) + '</span>'
+            + '<span class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-semibold text-red-800">' + escaparHtml('Bajas ' + fmtEntero(nBajas)) + '</span>'
+            + '<span class="inline-flex items-center rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-semibold text-teal-800">' + escaparHtml('Disca altas ' + fmtEntero(nAltasDisca)) + '</span>'
+            + '<span class="inline-flex items-center rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-semibold text-orange-800">' + escaparHtml('Disca bajas ' + fmtEntero(nBajasDisca)) + '</span>'
+            + '</div>'
+            + '<p>' + escaparHtml(textoAltas) + '</p>'
+            + '<p>' + escaparHtml(textoBajas) + '</p>'
+            + '<p>' + escaparHtml(textoTendencia) + '</p>';
+
+        contextoDiagnosticoIa = [
+            'Indicador: altas y bajas del mismo período en unicos.',
+            'Alcance: ' + alcance + '.',
+            estado,
+            textoAltas,
+            textoBajas,
+            textoTendencia + ' Tendencia ' + tendencia + '.'
+        ].join(' ');
+    }
+
     function diagnosticarMovimiento(bloque, filas) {
         var caja = document.getElementById('insightDinamico_movimiento');
         contextoDiagnosticoIa = '';
@@ -1158,6 +1329,10 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         var porcentajes = (bloque && bloque.variacion_pct) ? bloque.variacion_pct : [];
         if (!labels.length) {
             caja.innerHTML = '<p>Sin datos para diagnosticar este indicador.</p>';
+            return;
+        }
+        if (bloque.reales) {
+            diagnosticarMovimientoReal(bloque, filas, caja);
             return;
         }
 
@@ -1343,9 +1518,130 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         });
     }
 
+    function filaRangoDisca(fila) {
+        var otros = Number(fila.o) || 0;
+        var discaOtros = Number(fila.disca_o) || 0;
+        var extra = '';
+        if (otros > 0 || discaOtros > 0) {
+            extra = '<td class="px-2 py-1 text-right">' + fmtEntero(otros) + '</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(discaOtros) + '</td>';
+        }
+        return '<tr class="border-t border-slate-100">'
+            + '<td class="px-2 py-1">' + escaparHtml(fila.rango || '') + '</td>'
+            + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.m) + '</td>'
+            + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.f) + '</td>'
+            + '<td class="px-2 py-1 text-right font-semibold text-teal-800">' + fmtEntero(fila.disca_m) + '</td>'
+            + '<td class="px-2 py-1 text-right font-semibold text-orange-800">' + fmtEntero(fila.disca_f) + '</td>'
+            + extra
+            + '</tr>';
+    }
+
+    function tablaEdadMovimiento(titulo, filas) {
+        var lista = filas || [];
+        var hayOtros = false;
+        var k;
+        for (k = 0; k < lista.length; k++) {
+            if ((Number(lista[k].o) || 0) > 0 || (Number(lista[k].disca_o) || 0) > 0) {
+                hayOtros = true;
+                break;
+            }
+        }
+        var html = '<div class="rounded-xl border border-slate-200 bg-slate-50 p-3">'
+            + '<p class="mb-2 text-xs font-semibold text-slate-700">' + escaparHtml(titulo) + '</p>'
+            + '<table class="w-full"><thead><tr class="text-left text-[11px] uppercase text-slate-500">'
+            + '<th class="px-2 py-1">Rango</th><th class="px-2 py-1 text-right">M</th><th class="px-2 py-1 text-right">F</th>'
+            + '<th class="px-2 py-1 text-right">Disca M</th><th class="px-2 py-1 text-right">Disca F</th>'
+            + (hayOtros ? '<th class="px-2 py-1 text-right">Otros</th><th class="px-2 py-1 text-right">Disca otros</th>' : '')
+            + '</tr></thead><tbody>';
+        var i;
+        for (i = 0; i < lista.length; i++) {
+            html += filaRangoDisca(lista[i]);
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    function pintarDiscapacidadEtaria(bloque) {
+        var caja = document.getElementById('tablaDiscapacidadEtaria');
+        if (!caja) {
+            return;
+        }
+        var disca = bloque.discapacidad || null;
+        if (!disca || !disca.rangos || Number(disca.total) === 0) {
+            caja.innerHTML = '';
+            return;
+        }
+        var html = '<p class="mb-1 font-semibold text-slate-700">Discapacidad por edad y sexo: '
+            + fmtEntero(disca.total) + ' (' + String(disca.porcentaje).replace('.', ',') + ' %)</p>'
+            + '<table class="w-full"><thead><tr class="text-left text-[11px] uppercase text-slate-500">'
+            + '<th class="px-2 py-1">Rango</th><th class="px-2 py-1 text-right">M</th><th class="px-2 py-1 text-right">F</th><th class="px-2 py-1 text-right">Total</th>'
+            + '</tr></thead><tbody>';
+        var i;
+        for (i = 0; i < disca.rangos.length; i++) {
+            var fila = disca.rangos[i];
+            html += '<tr class="border-t border-slate-100">'
+                + '<td class="px-2 py-1">' + escaparHtml(fila.rango || '') + '</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.m) + '</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.f) + '</td>'
+                + '<td class="px-2 py-1 text-right font-semibold">' + fmtEntero(fila.total) + '</td>'
+                + '</tr>';
+        }
+        html += '</tbody></table>';
+        caja.innerHTML = html;
+    }
+
+    function pintarMovimientoReal(bloque) {
+        var caja = document.getElementById('tablaMovimientoReal');
+        var detalle = document.getElementById('detalleEdadMovimiento');
+        if (!caja) {
+            return;
+        }
+        var filas = (bloque && bloque.filas) ? bloque.filas : [];
+        if (!filas.length) {
+            caja.innerHTML = '<p class="text-slate-500">' + escaparHtml((bloque && bloque.mensaje) ? bloque.mensaje : 'Sin cortes para cruzar.') + '</p>';
+            if (detalle) {
+                detalle.innerHTML = '';
+            }
+            return;
+        }
+
+        var html = '<table class="w-full"><thead><tr class="text-left text-[11px] uppercase text-slate-500">'
+            + '<th class="px-2 py-1">Período</th><th class="px-2 py-1">Contra</th>'
+            + '<th class="px-2 py-1 text-right">Altas</th><th class="px-2 py-1 text-right">Altas disca</th>'
+            + '<th class="px-2 py-1 text-right">Bajas</th><th class="px-2 py-1 text-right">Bajas disca</th>'
+            + '</tr></thead><tbody>';
+        var i;
+        for (i = 0; i < filas.length; i++) {
+            var fila = filas[i];
+            html += '<tr class="border-t border-slate-100">'
+                + '<td class="px-2 py-1 font-semibold">' + escaparHtml(fila.periodo || '') + (fila.pfile ? ' · ' + escaparHtml(fila.pfile) : '') + '</td>'
+                + '<td class="px-2 py-1">' + escaparHtml(fila.contra || '') + '</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.altas) + '</td>'
+                + '<td class="px-2 py-1 text-right font-semibold text-teal-800">' + fmtEntero(fila.altas_disca) + '</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.bajas) + '</td>'
+                + '<td class="px-2 py-1 text-right font-semibold text-orange-800">' + fmtEntero(fila.bajas_disca) + '</td>'
+                + '</tr>';
+        }
+        html += '</tbody></table>';
+        caja.innerHTML = html;
+
+        if (!detalle) {
+            return;
+        }
+        var ultima = filas[filas.length - 1];
+        var tituloEdad = ultima.pfile
+            ? ('Edad y sexo de ' + (ultima.pfile || '') + ' contra ' + (ultima.contra || ''))
+            : ('Edad y sexo de las altas y bajas de ' + (ultima.periodo || '') + ' en unicos');
+        detalle.innerHTML = '<p class="mb-2 text-xs font-semibold text-slate-700">' + escaparHtml(tituloEdad) + '</p>'
+            + '<div class="grid gap-3 lg:grid-cols-2">'
+            + tablaEdadMovimiento('Altas', ultima.altas_edad)
+            + tablaEdadMovimiento('Bajas', ultima.bajas_edad)
+            + '</div>';
+    }
+
     function dibujarEtario(bloque) {
         chartEtario = destruirChart(chartEtario);
-        var colores = { M: '#1565c0', F: '#c2185b', O: '#7b1fa2' };
+        var colores = { M: '#1565c0', F: '#c2185b', O: '#7b1fa2', DM: '#00695c', DF: '#ef6c00', DO: '#6d4c41' };
         var datasets = [];
         var series = bloque.series || [];
         var i;
@@ -1356,7 +1652,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             for (j = 0; j < valores.length; j++) {
                 suma += Number(valores[j]) || 0;
             }
-            if (series[i].sexo === 'O' && suma === 0) {
+            if ((series[i].sexo === 'O' || series[i].sexo === 'DM' || series[i].sexo === 'DF' || series[i].sexo === 'DO') && suma === 0) {
                 continue;
             }
             datasets.push({
@@ -1442,12 +1738,53 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         }
         dibujarFamiliar(data.familiar || { labels: [], data: [] });
         dibujarEtario(data.etario || { labels: [], series: [] });
+        pintarDiscapacidadEtaria(data.etario || {});
         dibujarPlanes(data.planes || { labels: [], data: [] });
         dibujarLocalidades(data.localidades || { labels: [], data: [], titulo: 'Top 10 Localidades' });
+        dibujarZonas(data.zonas || { labels: [], data: [] });
         pintarCaja('insightDinamico_familiar', (data.familiar || {}).lineas);
         pintarCaja('insightDinamico_etario', (data.etario || {}).lineas);
         pintarCaja('insightDinamico_planes', (data.planes || {}).lineas);
         pintarCaja('insightDinamico_localidades', (data.localidades || {}).lineas);
+        pintarCaja('insightDinamico_zonas', (data.zonas || {}).lineas);
+    }
+
+    function dibujarZonas(bloque) {
+        chartZonas = destruirChart(chartZonas);
+        var lienzo = document.getElementById('graficoZonas');
+        if (!lienzo) {
+            return;
+        }
+        var series = bloque.series || [];
+        var datasets = [];
+        var i;
+        if (!series.length && bloque.data && bloque.data.length) {
+            series = [{ label: 'Discapacidad', data: bloque.data, color: '#00695c' }];
+        }
+        for (i = 0; i < series.length; i++) {
+            datasets.push({
+                label: series[i].label,
+                data: series[i].data || [],
+                backgroundColor: series[i].color || '#00695c'
+            });
+        }
+        chartZonas = new Chart(lienzo, {
+            type: 'bar',
+            data: {
+                labels: bloque.labels || [],
+                datasets: datasets
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    x: { stacked: true, beginAtZero: true, grace: '8%', ticks: { callback: function (v) { return fmtEntero(v); } } },
+                    y: { stacked: true }
+                }
+            }
+        });
     }
 
     function claseSolapa(activa) {
@@ -1577,9 +1914,14 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             pintarKpis(data.kpis || {});
             dibujarInteranual(data.interanual || { labels: [], series: [] });
             dibujarHistorico(data.historico || { labels: [], totales: [], min: null, max: null });
-            dibujarMovimiento(data.movimiento || { labels: [], totales: [], altas: [], bajas: [], variacion_pct: [] });
+            var movimientoReal = data.movimiento_real || { disponible: false, filas: [], mensaje: '' };
+            var graficoMovimiento = (movimientoReal.grafico && movimientoReal.grafico.labels && movimientoReal.grafico.labels.length)
+                ? movimientoReal.grafico
+                : (data.movimiento || { labels: [], totales: [], altas: [], bajas: [], variacion_pct: [] });
+            dibujarMovimiento(graficoMovimiento);
+            pintarMovimientoReal(movimientoReal);
             dibujarTabla(data.tabla || []);
-            diagnosticarMovimiento(data.movimiento || { labels: [], totales: [], altas: [], bajas: [], variacion_pct: [] }, data.tabla || []);
+            diagnosticarMovimiento(graficoMovimiento, data.tabla || []);
             pintarInsights(data.insights || {});
             if (solapaActiva !== 'temporal') {
                 dibujarEtapa2(datosDemografia);
@@ -1615,6 +1957,14 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
 
     document.getElementById('formEvolucion').addEventListener('submit', function (e) {
         e.preventDefault();
+        var obraNueva = document.getElementById('filtroObra').value;
+        if (obraChat !== '' && obraNueva !== obraChat) {
+            var panelAbierto = !document.getElementById('aiModalAuditor').classList.contains('hidden');
+            vaciarAuditorIa();
+            if (panelAbierto && obraNueva) {
+                pedirAuditorIa('iniciar', '');
+            }
+        }
         cargar(true);
     });
 
@@ -1738,10 +2088,27 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
 
     var chatIniciado = false;
     var chatOcupado = false;
+    var obraChat = '';
+    var chatTicket = 0;
 
     function obraAuditoria() {
         var obra = document.getElementById('filtroObra').value;
         return obra ? obra : '';
+    }
+
+    function vaciarAuditorIa() {
+        chatTicket++;
+        chatOcupado = false;
+        chatIniciado = false;
+        obraChat = '';
+        loaderAuditorIa(false);
+        document.getElementById('aiChatHistorial').innerHTML = '';
+        document.getElementById('aiInputTexto').value = '';
+        document.getElementById('aiInputFile').value = '';
+        document.getElementById('aiArchivoPreview').classList.add('hidden');
+        document.getElementById('aiArchivoPreview').classList.remove('flex');
+        var obra = obraAuditoria();
+        document.getElementById('aiModalSubtitulo').textContent = obra ? obra : 'Seleccioná una obra y un período';
     }
 
     function abrirAuditorIa() {
@@ -1815,11 +2182,15 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         }
         chatOcupado = true;
         loaderAuditorIa(true);
+        var ticket = ++chatTicket;
         fetch('index.php?c=dashboard&a=ajaxChatAi', {
             method: 'POST',
             body: datos,
             credentials: 'same-origin'
         }).then(function (r) { return r.json(); }).then(function (data) {
+            if (ticket !== chatTicket) {
+                return;
+            }
             chatOcupado = false;
             loaderAuditorIa(false);
             if (!data || data.status !== 'success') {
@@ -1832,7 +2203,8 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                 return;
             }
             if (data.obra || data.periodo) {
-                document.getElementById('aiModalSubtitulo').textContent = (data.obra || obra) + (data.periodo ? ' · ' + data.periodo : '');
+                obraChat = data.obra || obra;
+                document.getElementById('aiModalSubtitulo').textContent = obraChat + (data.periodo ? ' · ' + data.periodo : '');
             }
             if (data.html) {
                 burbujaAuditorIa('model', data.html);
@@ -1845,6 +2217,9 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                 document.getElementById('aiArchivoPreview').classList.remove('flex');
             }
         }).catch(function () {
+            if (ticket !== chatTicket) {
+                return;
+            }
             chatOcupado = false;
             loaderAuditorIa(false);
             Swal.fire({
@@ -1858,7 +2233,10 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
 
     document.getElementById('btnProfundizarIa').addEventListener('click', function () {
         abrirAuditorIa();
-        if (!chatIniciado) {
+        var obra = obraAuditoria();
+        if (!chatIniciado || obraChat !== obra) {
+            document.getElementById('aiChatHistorial').innerHTML = '';
+            chatIniciado = false;
             pedirAuditorIa('iniciar', '');
         }
     });
@@ -1869,12 +2247,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         }
     });
     document.getElementById('btnAiReiniciarChat').addEventListener('click', function () {
-        document.getElementById('aiChatHistorial').innerHTML = '';
-        document.getElementById('aiInputTexto').value = '';
-        document.getElementById('aiInputFile').value = '';
-        document.getElementById('aiArchivoPreview').classList.add('hidden');
-        document.getElementById('aiArchivoPreview').classList.remove('flex');
-        chatIniciado = false;
+        vaciarAuditorIa();
         pedirAuditorIa('iniciar', '');
     });
     document.getElementById('aiInputFile').addEventListener('change', function () {

@@ -265,6 +265,14 @@ class DashboardController extends Controller
         if (!isset($_SESSION['ai_chat_history']) || !is_array($_SESSION['ai_chat_history'])) {
             $_SESSION['ai_chat_history'] = array();
         }
+        $obraContexto = '';
+        if (isset($_SESSION['ai_padron_contexto']['obrasoc'])) {
+            $obraContexto = (string) $_SESSION['ai_padron_contexto']['obrasoc'];
+        }
+        if ($obraContexto !== '' && $obraContexto !== $obrasoc) {
+            $_SESSION['ai_chat_history'] = array();
+            unset($_SESSION['ai_padron_contexto']);
+        }
 
         require_once __DIR__ . '/../services/AiService.php';
         $servicio = new AiService();
