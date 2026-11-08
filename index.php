@@ -34,7 +34,9 @@ $esAjax = ($accionPedida === 'ajaxlogin'
     || $accionPedida === 'ajaxguardarreglasia'
     || $accionPedida === 'ajaxgetmapaapreparar'
     || $accionPedida === 'ajaxgetmapaafiliados'
-    || $accionPedida === 'ajaxgetmapaprestadores');
+    || $accionPedida === 'ajaxgetmapaprestadores'
+    || $accionPedida === 'ajaxresumenordenes'
+    || $accionPedida === 'ajaxexplosionordenes');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -78,6 +80,7 @@ require_once APP_PATH . '/models/UsuarioModel.php';
 require_once APP_PATH . '/controllers/AuthController.php';
 require_once APP_PATH . '/controllers/DashboardController.php';
 require_once APP_PATH . '/controllers/AuditoriaController.php';
+require_once APP_PATH . '/controllers/SectoresController.php';
 
 header('X-Frame-Options: SAMEORIGIN');
 header('X-Content-Type-Options: nosniff');
@@ -134,6 +137,19 @@ $mapa = array(
         ),
         'publico'  => array(),
         'default'  => 'controlPrestadores',
+    ),
+    'sectores' => array(
+        'clase'    => 'SectoresController',
+        'acciones' => array(
+            'index' => true,
+            'ordenes' => true,
+            'facturacion' => true,
+            'auditoriaFacturas' => true,
+            'ajaxResumenOrdenes' => true,
+            'ajaxExplosionOrdenes' => true,
+        ),
+        'publico'  => array(),
+        'default'  => 'ordenes',
     ),
 );
 

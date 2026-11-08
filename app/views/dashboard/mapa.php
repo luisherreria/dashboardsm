@@ -21,7 +21,13 @@ if ($categoriasJson === false) {
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <style>
-    #mapaCobertura { height: calc(100vh - 210px); min-height: 520px; border-radius: 0 0 1rem 1rem; }
+    #mapaCobertura {
+        height: calc(100vh - 210px);
+        min-height: 520px;
+        border-radius: 0 0 1rem 1rem;
+        position: relative;
+        z-index: 0;
+    }
     .mapa-tri, .mapa-grupo { background: transparent; border: 0; }
     .leaflet-tooltip.mapa-tip {
         background: #fff;
@@ -104,6 +110,7 @@ if ($categoriasJson === false) {
                 <?php endforeach; ?>
             </div>
             <p id="resumenPrestadores" class="mt-2 text-xs text-slate-500">Se cargan al elegir la obra social.</p>
+            <div id="listaProvincias" class="mt-2 max-h-36 space-y-0.5 overflow-y-auto"></div>
             <button type="button" id="btnReintentarPrestadores" class="mt-3 hidden rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-[#1565c0] hover:bg-blue-50">Reintentar prestadores</button>
         </section>
 
@@ -552,6 +559,7 @@ if ($categoriasJson === false) {
         var reintento = document.getElementById('btnReintentarPrestadores');
         if (obra === '') {
             resumen.textContent = 'Se cargan al elegir la obra social.';
+            pintarProvincias([]);
             reintento.classList.add('hidden');
             return;
         }
@@ -569,6 +577,7 @@ if ($categoriasJson === false) {
                     return;
                 }
                 pintarCategorias(data.categorias || []);
+                pintarProvincias(data.provincias || []);
                 dibujarPrestadores(data.puntos || []);
                 resumen.textContent = entero(data.ubicados) + ' de ' + entero(data.total) + ' sucursales en el mapa'
                     + (data.aproximados ? (' · ' + entero(data.aproximados) + ' por localidad') : '')
@@ -651,6 +660,25 @@ if ($categoriasJson === false) {
             }
         }
         estado('No hay un punto visible con ese texto.');
+    }
+
+    function pintarProvincias(lista) {
+        var caja = document.getElementById('listaProvincias');
+        if (!caja) {
+            return;
+        }
+        if (!lista || !lista.length) {
+            caja.innerHTML = '';
+            return;
+        }
+        var html = '<p class="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por provincia</p>';
+        var i;
+        for (i = 0; i < lista.length; i++) {
+            html += '<div class="flex items-center justify-between gap-2 px-1 text-xs text-slate-700">'
+                + '<span class="truncate">' + dato(lista[i].zona) + '</span>'
+                + '<span class="shrink-0 text-slate-400">' + entero(lista[i].total) + '</span></div>';
+        }
+        caja.innerHTML = html;
     }
 
     function pintarCategorias(lista) {

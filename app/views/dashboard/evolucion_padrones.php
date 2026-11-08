@@ -27,6 +27,13 @@ $accesos = array(
         'icon'  => 'fa-solid fa-user-doctor',
         'texto' => 'Uso de prestaciones',
     ),
+    array(
+        'id'    => 'sectores',
+        'label' => 'Control de sectores',
+        'href'  => 'index.php?c=sectores&a=ordenes',
+        'icon'  => 'fa-solid fa-clipboard-check',
+        'texto' => 'Órdenes, facturación y auditoría',
+    ),
 );
 
 if ($esAdmin) {
@@ -104,7 +111,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         </button>
     </div>
     <div class="p-4">
-        <div id="grillaAccesos" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"></div>
+        <div id="grillaAccesos" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"></div>
         <div id="accesosVacios" class="hidden py-8 text-center text-sm text-slate-500">
             <i class="fa-solid fa-star mb-2 block text-2xl text-slate-300"></i>
             No hay accesos rápidos visibles.
