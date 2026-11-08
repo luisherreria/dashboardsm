@@ -49,6 +49,7 @@ class PadronModel
         $filas = $stmt->fetchAll();
         $lista = array();
         $vistos = array();
+        $conPadron = $this->codigosConPadron();
 
         if (!is_array($filas)) {
             return $lista;
@@ -56,7 +57,7 @@ class PadronModel
 
         foreach ($filas as $fila) {
             $codigo = strtoupper(trim((string) $fila['obrasoc']));
-            if ($codigo === '' || isset($vistos[$codigo])) {
+            if ($codigo === '' || isset($vistos[$codigo]) || !isset($conPadron[$codigo])) {
                 continue;
             }
             $vistos[$codigo] = true;
@@ -73,6 +74,32 @@ class PadronModel
         }
 
         return $lista;
+    }
+
+    private function codigosConPadron()
+    {
+        $sql = "SELECT DISTINCT TRIM(OBRASOC) AS obrasoc
+                  FROM vfpmedicos.padrosoc
+                 WHERE CANTREG > 1
+                   AND TRIM(OBRASOC) <> ''
+                UNION
+                SELECT DISTINCT TRIM(OBRASOC) AS obrasoc
+                  FROM vfpmedicos.t_padron
+                 WHERE PERIODO <> ''
+                   AND TRIM(OBRASOC) <> ''";
+        $stmt = $this->db->query($sql);
+        $filas = $stmt->fetchAll();
+        $mapa = array();
+        if (!is_array($filas)) {
+            return $mapa;
+        }
+        foreach ($filas as $fila) {
+            $codigo = strtoupper(trim((string) $this->valorFila($fila, 'obrasoc')));
+            if ($codigo !== '') {
+                $mapa[$codigo] = true;
+            }
+        }
+        return $mapa;
     }
 
     public function getAniosDisponibles()
@@ -155,6 +182,14 @@ class PadronModel
 
     public function construirRespuesta($obrasoc, $aniosArray)
     {
+        $obra = strtoupper(trim((string) $obrasoc));
+        if ($obra === '') {
+            return array(
+                'status'  => 'error',
+                'message' => 'Seleccione una obra social. La evolución se calcula solo con esa obra.',
+            );
+        }
+        $obrasoc = $obra;
         $anios = $this->normalizarAnios($aniosArray);
         if (count($anios) === 0) {
             $disponibles = $this->getAniosDisponibles();
@@ -263,6 +298,9 @@ class PadronModel
     private function filtrarCortes($obrasoc, $anios)
     {
         $obra = strtoupper(trim((string) $obrasoc));
+        if ($obra === '') {
+            return array();
+        }
         $mapaAnios = array();
         if (is_array($anios)) {
             foreach ($anios as $anio) {
@@ -270,45 +308,35 @@ class PadronModel
             }
         }
 
-        $reales = array();
-        if ($obra !== '') {
-            foreach ($this->leerCortesDetalle($obra) as $real) {
-                $reales[$real['periodo']] = true;
-            }
+        if ($obra === '') {
+            return array();
         }
-        $hayReales = count($reales) > 0;
 
         $salida = array();
-        $ordenMax = -1;
         foreach ($this->leerCortes() as $fila) {
-            if ($obra !== '' && $fila['obrasoc'] !== $obra) {
+            if ($fila['obrasoc'] !== $obra) {
                 continue;
             }
             if (count($mapaAnios) > 0 && !isset($mapaAnios[(int) $fila['anio']])) {
                 continue;
             }
-            if ($hayReales && !isset($reales[$fila['periodo']]) && (int) $fila['total'] <= 1) {
+            if ((int) $fila['total'] <= 1) {
                 continue;
             }
-            $salida[] = $fila;
-            if ((int) $fila['orden'] > $ordenMax) {
-                $ordenMax = (int) $fila['orden'];
-            }
+            $salida[$fila['periodo']] = $fila;
         }
 
-        if ($obra !== '') {
-            foreach ($this->leerCortesDetalle($obra) as $fila) {
-                if ((int) $fila['orden'] <= $ordenMax) {
-                    continue;
-                }
-                if (count($mapaAnios) > 0 && !isset($mapaAnios[(int) $fila['anio']])) {
-                    continue;
-                }
-                $salida[] = $fila;
+        foreach ($this->leerCortesDetalle($obra) as $fila) {
+            if (count($mapaAnios) > 0 && !isset($mapaAnios[(int) $fila['anio']])) {
+                continue;
             }
+            if ((int) $fila['total'] <= 0) {
+                continue;
+            }
+            $salida[$fila['periodo']] = $fila;
         }
 
-        return $salida;
+        return array_values($salida);
     }
 
     private function leerCortesDetalle($obra)
@@ -317,26 +345,52 @@ class PadronModel
             return $this->detalleObra[$obra];
         }
 
-        $sql = "SELECT TRIM(PERIODO) AS periodo, COUNT(*) AS total
-                  FROM vfpmedicos.t_padron
-                 WHERE OBRASOC = :obra
-                   AND PERIODO <> ''
-                 GROUP BY PERIODO";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute(array(':obra' => $obra));
-        $filas = $stmt->fetchAll();
-        $lista = array();
+        $filas = array();
+        try {
+            $sql = "SELECT TRIM(PERIODO) AS periodo,
+                           TRIM(IFNULL(PFILE, '')) AS pfile,
+                           COUNT(*) AS total
+                      FROM vfpmedicos.t_padron
+                     WHERE OBRASOC = :obra
+                       AND PERIODO <> ''
+                     GROUP BY TRIM(PERIODO), TRIM(IFNULL(PFILE, ''))";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute(array(':obra' => $obra));
+            $filas = $stmt->fetchAll();
+        } catch (Exception $e) {
+            $sql = "SELECT TRIM(PERIODO) AS periodo, '' AS pfile, COUNT(*) AS total
+                      FROM vfpmedicos.t_padron
+                     WHERE OBRASOC = :obra
+                       AND PERIODO <> ''
+                     GROUP BY PERIODO";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute(array(':obra' => $obra));
+            $filas = $stmt->fetchAll();
+        }
 
+        $porPeriodo = array();
         if (is_array($filas)) {
             foreach ($filas as $fila) {
-                $corte = $this->corteDesdePeriodo(
-                    $obra,
-                    $this->valorFila($fila, 'periodo'),
-                    $this->valorFila($fila, 'total')
-                );
-                if ($corte !== null) {
-                    $lista[] = $corte;
+                $periodo = trim((string) $this->valorFila($fila, 'periodo'));
+                if ($periodo === '') {
+                    continue;
                 }
+                if (!isset($porPeriodo[$periodo])) {
+                    $porPeriodo[$periodo] = array();
+                }
+                $porPeriodo[$periodo][] = array(
+                    'pfile' => strtoupper(trim((string) $this->valorFila($fila, 'pfile'))),
+                    'total' => (int) $this->valorFila($fila, 'total'),
+                );
+            }
+        }
+
+        $lista = array();
+        foreach ($porPeriodo as $periodo => $archivos) {
+            $elegido = $this->elegirConteoVigente($archivos, $periodo);
+            $corte = $this->corteDesdePeriodo($obra, $periodo, $elegido['total'], $elegido['archivo']);
+            if ($corte !== null) {
+                $lista[] = $corte;
             }
         }
 
@@ -344,7 +398,52 @@ class PadronModel
         return $lista;
     }
 
-    private function corteDesdePeriodo($obra, $periodo, $total)
+    private function elegirConteoVigente($archivos, $periodo)
+    {
+        $conNombre = array();
+        $sinNombre = 0;
+        foreach ($archivos as $archivo) {
+            if ($archivo['pfile'] === '') {
+                $sinNombre += (int) $archivo['total'];
+                continue;
+            }
+            $conNombre[] = $archivo['pfile'];
+        }
+        if (count($conNombre) === 0) {
+            return array('total' => $sinNombre, 'archivo' => '');
+        }
+
+        $vigente = $this->elegirArchivoVigente($conNombre, $periodo);
+        $total = 0;
+        foreach ($archivos as $archivo) {
+            if ($archivo['pfile'] === $vigente) {
+                $total = (int) $archivo['total'];
+                break;
+            }
+        }
+        return array(
+            'total'   => $total,
+            'archivo' => $this->nombreCortoArchivo($vigente),
+        );
+    }
+
+    private function contarActivosUnicos($obra)
+    {
+        try {
+            $sql = "SELECT COUNT(*) AS total
+                      FROM vfpmedicos.unicos
+                     WHERE OBRASOC = :obra
+                       AND (FBAJA IS NULL OR TRIM(FBAJA) = '')";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute(array(':obra' => $obra));
+            $fila = $stmt->fetch();
+            return (int) $this->valorFila($fila, 'total');
+        } catch (Exception $e) {
+            return 0;
+        }
+    }
+
+    private function corteDesdePeriodo($obra, $periodo, $total, $archivo = '')
     {
         $periodo = trim((string) $periodo);
         if (!preg_match('/^(\d{2})\/(\d{2})$/', $periodo, $partes)) {
@@ -361,6 +460,7 @@ class PadronModel
             'anio'    => $anio,
             'mes'     => $mes,
             'total'   => (int) $total,
+            'archivo' => trim((string) $archivo),
             'periodo' => $this->formatearPeriodo($anio, $mes),
             'orden'   => ($anio * 100) + $mes,
         );
@@ -825,6 +925,26 @@ class PadronModel
         return $mejor['periodo'];
     }
 
+    /**
+     * Último corte de t_padron y el archivo vigente de ese período.
+     * El archivo evita sumar varias importaciones del mismo mes.
+     */
+    public function getCorteVigente($obrasoc)
+    {
+        $periodo = $this->getUltimoPeriodoReal($obrasoc);
+        if ($periodo === null || $periodo === '') {
+            return array(
+                'periodo' => '',
+                'archivo' => '',
+            );
+        }
+
+        return array(
+            'periodo' => $periodo,
+            'archivo' => $this->archivoVigente($obrasoc, $periodo),
+        );
+    }
+
     public function getUltimoPeriodo($obrasoc)
     {
         $serie = $this->agregarPorPeriodo($this->filtrarCortes($obrasoc, array()));
@@ -956,16 +1076,21 @@ class PadronModel
         }
 
         $obra = strtoupper(trim((string) $obrasoc));
+        if ($obra === '') {
+            return array(
+                'labels'   => array(),
+                'datasets' => array(),
+                'lineas'   => array('Seleccione una obra social. La evolución se calcula solo con esa obra.'),
+                'message'  => 'Seleccione una obra social.',
+            );
+        }
         $sql = "SELECT TRIM(PERIODO) AS periodo, TRIM(PFILE) AS pfile, TRIM(ENROL1) AS marca, COUNT(*) AS total
                   FROM vfpmedicos.t_padron
                  WHERE ENROL1 IS NOT NULL
                    AND TRIM(ENROL1) != ''
-                   AND TRIM(ENROL1) != '-'";
-        $params = array();
-        if ($obra !== '') {
-            $sql .= ' AND OBRASOC = :obra';
-            $params[':obra'] = $obra;
-        }
+                   AND TRIM(ENROL1) != '-'
+                   AND OBRASOC = :obra";
+        $params = array(':obra' => $obra);
         $sql .= ' GROUP BY PERIODO, PFILE, ENROL1';
 
         $stmt = $this->db->prepare($sql);
@@ -1606,7 +1731,7 @@ class PadronModel
         $params = $filtro['params'];
         $params[':corte'] = $fechaCorte;
 
-        $sql = "SELECT rango, sexo, disca, COUNT(*) AS cantidad
+        $sql = "SELECT rango, sexo, marca, COUNT(*) AS cantidad
                   FROM (
                         SELECT CASE
                                  WHEN edad IS NULL OR edad < 0 THEN 'Sin edad'
@@ -1621,10 +1746,7 @@ class PadronModel
                                  WHEN UPPER(TRIM(sexo_raw)) IN ('F', 'FEMENINO', '2') THEN 'F'
                                  ELSE 'O'
                                END AS sexo,
-                               CASE
-                                 WHEN UPPER(TRIM(enrol_raw)) LIKE '%DISCAP%' THEN 1
-                                 ELSE 0
-                               END AS disca
+                               TRIM(enrol_raw) AS marca
                           FROM (
                                 SELECT TIMESTAMPDIFF(YEAR, FECNACIM, :corte) AS edad,
                                        SEXO AS sexo_raw,
@@ -1633,30 +1755,32 @@ class PadronModel
                      . $filtro['sql']
                      . "          ) base
                        ) clasificado
-                 GROUP BY rango, sexo, disca";
+                 GROUP BY rango, sexo, marca";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $filas = $stmt->fetchAll();
 
         $matriz = array();
-        $discaMatriz = array();
+        $condMatriz = array();
         foreach ($rangos as $rango) {
             $matriz[$rango] = array('M' => 0, 'F' => 0, 'O' => 0);
-            $discaMatriz[$rango] = array('M' => 0, 'F' => 0, 'O' => 0);
         }
         $sinEdad = 0;
-        $sinEdadDisca = 0;
+        $condSinEdad = array();
         if (is_array($filas)) {
             foreach ($filas as $fila) {
                 $rango = (string) $fila['rango'];
                 $sexo = (string) $fila['sexo'];
                 $cantidad = (int) $fila['cantidad'];
-                $esDisca = (int) $fila['disca'] === 1;
+                $etiqueta = $this->etiquetaCondicion($this->valorFila($fila, 'marca'));
                 if ($rango === 'Sin edad') {
                     $sinEdad += $cantidad;
-                    if ($esDisca) {
-                        $sinEdadDisca += $cantidad;
+                    if ($etiqueta !== '') {
+                        if (!isset($condSinEdad[$etiqueta])) {
+                            $condSinEdad[$etiqueta] = 0;
+                        }
+                        $condSinEdad[$etiqueta] += $cantidad;
                     }
                     continue;
                 }
@@ -1667,41 +1791,70 @@ class PadronModel
                     $sexo = 'O';
                 }
                 $matriz[$rango][$sexo] += $cantidad;
-                if ($esDisca) {
-                    $discaMatriz[$rango][$sexo] += $cantidad;
+                if ($etiqueta === '') {
+                    continue;
                 }
+                if (!isset($condMatriz[$etiqueta])) {
+                    $condMatriz[$etiqueta] = array();
+                    foreach ($rangos as $rangoBase) {
+                        $condMatriz[$etiqueta][$rangoBase] = array('M' => 0, 'F' => 0, 'O' => 0);
+                    }
+                }
+                $condMatriz[$etiqueta][$rango][$sexo] += $cantidad;
             }
         }
+
+        $nombresCond = array_keys($condMatriz);
+        foreach ($condSinEdad as $etiqueta => $cantidadSin) {
+            if (!isset($condMatriz[$etiqueta])) {
+                $nombresCond[] = $etiqueta;
+            }
+        }
+        usort($nombresCond, array($this, 'compararCondicion'));
 
         $serieM = array();
         $serieF = array();
         $serieO = array();
-        $serieDiscaM = array();
-        $serieDiscaF = array();
-        $serieDiscaO = array();
         $mayorRango = '';
         $mayorCantidad = -1;
         $mayorDiscaRango = '';
         $mayorDisca = -1;
         $total = $sinEdad;
-        $totalDisca = $sinEdadDisca;
+        $totalDisca = isset($condSinEdad['Discapacidad']) ? (int) $condSinEdad['Discapacidad'] : 0;
         $rangosDisca = array();
+        $condiciones = array();
+        $totalesCond = array();
+        foreach ($nombresCond as $etiqueta) {
+            $totalesCond[$etiqueta] = isset($condSinEdad[$etiqueta]) ? (int) $condSinEdad[$etiqueta] : 0;
+            $condiciones[$etiqueta] = array(
+                'label' => $etiqueta,
+                'color' => $this->colorCondicion($etiqueta),
+                'data'  => array(),
+                'total' => 0,
+            );
+        }
         foreach ($rangos as $rango) {
             $hombres = (int) $matriz[$rango]['M'];
             $mujeres = (int) $matriz[$rango]['F'];
             $otros = (int) $matriz[$rango]['O'];
-            $discaH = (int) $discaMatriz[$rango]['M'];
-            $discaMuj = (int) $discaMatriz[$rango]['F'];
-            $discaOtros = (int) $discaMatriz[$rango]['O'];
             $serieM[] = $hombres;
             $serieF[] = $mujeres;
             $serieO[] = $otros;
-            $serieDiscaM[] = $discaH;
-            $serieDiscaF[] = $discaMuj;
-            $serieDiscaO[] = $discaOtros;
             $suma = $hombres + $mujeres + $otros;
-            $sumaDisca = $discaH + $discaMuj + $discaOtros;
             $total += $suma;
+            if ($suma > $mayorCantidad) {
+                $mayorCantidad = $suma;
+                $mayorRango = $rango;
+            }
+            $discaH = 0;
+            $discaMuj = 0;
+            $discaOtros = 0;
+            if (isset($condMatriz['Discapacidad'][$rango])) {
+                $discaH = (int) $condMatriz['Discapacidad'][$rango]['M'];
+                $discaMuj = (int) $condMatriz['Discapacidad'][$rango]['F'];
+                $discaOtros = (int) $condMatriz['Discapacidad'][$rango]['O'];
+            }
+            $sumaDisca = $discaH + $discaMuj + $discaOtros;
             $totalDisca += $sumaDisca;
             $rangosDisca[] = array(
                 'rango' => $rango,
@@ -1710,15 +1863,42 @@ class PadronModel
                 'o'     => $discaOtros,
                 'total' => $sumaDisca,
             );
-            if ($suma > $mayorCantidad) {
-                $mayorCantidad = $suma;
-                $mayorRango = $rango;
-            }
             if ($sumaDisca > $mayorDisca) {
                 $mayorDisca = $sumaDisca;
                 $mayorDiscaRango = $rango;
             }
+            foreach ($nombresCond as $etiqueta) {
+                $mCond = isset($condMatriz[$etiqueta][$rango]) ? (int) $condMatriz[$etiqueta][$rango]['M'] : 0;
+                $fCond = isset($condMatriz[$etiqueta][$rango]) ? (int) $condMatriz[$etiqueta][$rango]['F'] : 0;
+                $oCond = isset($condMatriz[$etiqueta][$rango]) ? (int) $condMatriz[$etiqueta][$rango]['O'] : 0;
+                $sumaCond = $mCond + $fCond + $oCond;
+                $condiciones[$etiqueta]['data'][] = $sumaCond;
+                $totalesCond[$etiqueta] += $sumaCond;
+            }
         }
+        foreach ($nombresCond as $etiqueta) {
+            $condiciones[$etiqueta]['total'] = (int) $totalesCond[$etiqueta];
+        }
+
+        $series = array(
+            array('sexo' => 'M', 'label' => 'Masculino', 'data' => $serieM),
+            array('sexo' => 'F', 'label' => 'Femenino', 'data' => $serieF),
+            array('sexo' => 'O', 'label' => 'Otros', 'data' => $serieO),
+        );
+        $listaCond = array();
+        foreach ($nombresCond as $etiqueta) {
+            if ((int) $condiciones[$etiqueta]['total'] <= 0) {
+                continue;
+            }
+            $series[] = array(
+                'sexo'  => 'C',
+                'label' => $etiqueta,
+                'color' => $condiciones[$etiqueta]['color'],
+                'data'  => $condiciones[$etiqueta]['data'],
+            );
+            $listaCond[] = $condiciones[$etiqueta];
+        }
+        $sinEdadDisca = isset($condSinEdad['Discapacidad']) ? (int) $condSinEdad['Discapacidad'] : 0;
 
         $lineas = array();
         if ($total === 0 || $mayorCantidad < 0) {
@@ -1732,32 +1912,28 @@ class PadronModel
         if ($sinEdad > 0) {
             $lineas[] = $this->formatoEntero($sinEdad) . ' afiliados quedaron sin edad válida a partir de FECNACIM.';
         }
-        if ($total > 0 && $totalDisca === 0) {
-            $lineas[] = 'Este corte no informa discapacidad en enrol1.';
-        } elseif ($totalDisca > 0) {
-            $pctDisca = round(($totalDisca / $total) * 100, 1);
-            $lineas[] = 'Con discapacidad: ' . $this->formatoEntero($totalDisca)
-                . ' afiliados (' . $this->formatoPorcentaje($pctDisca)
-                . ' del corte). Van dentro del total, no suman aparte.';
-            if ($mayorDisca > 0) {
-                $lineas[] = 'El rango con más discapacidad es ' . $mayorDiscaRango . ', con '
-                    . $this->formatoEntero($mayorDisca) . ' afiliados.';
+        if (count($listaCond) > 0) {
+            $partes = array();
+            foreach ($listaCond as $item) {
+                $partes[] = $item['label'] . ' ' . $this->formatoEntero($item['total']);
             }
+            $lineas[] = 'Condiciones del corte: ' . implode(', ', $partes) . '.';
+        }
+        $pctDisca = $total > 0 ? round(($totalDisca / $total) * 100, 1) : 0;
+        $lineas[] = 'Suma total de discapacidad: ' . $this->formatoEntero($totalDisca)
+            . ' afiliados (' . $this->formatoPorcentaje($pctDisca) . ' del corte).';
+        if ($mayorDisca > 0) {
+            $lineas[] = 'El rango con más discapacidad es ' . $mayorDiscaRango . ', con '
+                . $this->formatoEntero($mayorDisca) . ' afiliados.';
         }
 
         return array(
             'labels' => $rangos,
-            'series' => array(
-                array('sexo' => 'M', 'label' => 'Masculino', 'data' => $serieM),
-                array('sexo' => 'F', 'label' => 'Femenino', 'data' => $serieF),
-                array('sexo' => 'O', 'label' => 'Otros', 'data' => $serieO),
-                array('sexo' => 'DM', 'label' => 'Discapacidad masculina', 'data' => $serieDiscaM),
-                array('sexo' => 'DF', 'label' => 'Discapacidad femenina', 'data' => $serieDiscaF),
-                array('sexo' => 'DO', 'label' => 'Discapacidad otros', 'data' => $serieDiscaO),
-            ),
+            'series' => $series,
+            'condiciones' => $listaCond,
             'discapacidad' => array(
                 'total'      => $totalDisca,
-                'porcentaje' => $total > 0 ? round(($totalDisca / $total) * 100, 1) : 0,
+                'porcentaje' => $pctDisca,
                 'rangos'     => $rangosDisca,
                 'sin_edad'   => $sinEdadDisca,
             ),
@@ -2258,18 +2434,27 @@ class PadronModel
         }
 
         $total = 0;
+        $archivo = '';
+        $fuente = 't_padron';
         foreach ($this->leerCortesDetalle($obra) as $fila) {
             if ($fila['periodo'] === $periodo) {
                 $total = (int) $fila['total'];
+                $archivo = isset($fila['archivo']) ? (string) $fila['archivo'] : '';
                 break;
             }
+        }
+        if ($total <= 0) {
+            $total = $this->contarActivosUnicos($obra);
+            $fuente = 'unicos';
+            $archivo = '';
         }
 
         return array(
             'disponible' => $total > 0,
             'periodo'    => $periodo,
             'total'      => $total,
-            'fuente'     => 't_padron',
+            'archivo'    => $archivo,
+            'fuente'     => $fuente,
             'obra'       => $obra,
         );
     }

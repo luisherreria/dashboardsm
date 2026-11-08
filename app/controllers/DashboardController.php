@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../core/Controller.php';
 require_once __DIR__ . '/../models/UsuarioModel.php';
 require_once __DIR__ . '/../models/PadronModel.php';
+require_once __DIR__ . '/../models/MapaModel.php';
 
 class DashboardController extends Controller
 {
@@ -988,6 +989,208 @@ class DashboardController extends Controller
             return array('error' => 'No se pudo leer el archivo de reglas.');
         }
         return $texto;
+    }
+
+    public function mapa()
+    {
+        $this->requerirLogin();
+
+        $obras = array();
+        $categorias = array();
+        $errorCarga = '';
+
+        try {
+            $padron = new PadronModel();
+            $obras = $padron->getObrasSociales();
+        } catch (Exception $e) {
+            error_log('DashboardController::mapa — ' . $e->getMessage());
+            $errorCarga = 'No se pudo preparar el mapa.';
+        }
+
+        $this->render('dashboard/mapa', array(
+            'pageTitle'       => 'COMEDICA — Mapa de cobertura',
+            'menuActivo'      => 'mapa',
+            'contenedorClase' => 'mx-auto w-full max-w-[1680px] px-4 pb-16 pt-[72px]',
+            'obras'           => $obras,
+            'categorias'      => $categorias,
+            'errorCarga'      => $errorCarga,
+            'breadcrumb'      => array(
+                array('label' => 'Inicio', 'href' => 'index.php?c=dashboard&a=evolucionPadrones'),
+                array('label' => 'Mapa de cobertura'),
+            ),
+        ));
+    }
+
+    public function ajaxGetMapaPreparar()
+    {
+        $this->exigirAjax();
+        $obra = $this->obraMapa();
+        if ($obra === '') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Seleccione una obra social.',
+            ));
+        }
+
+        try {
+            $modelo = new MapaModel();
+            $respuesta = $modelo->prepararAfiliados($obra);
+        } catch (Exception $e) {
+            error_log('DashboardController::ajaxGetMapaPreparar — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudieron ubicar las localidades del padrón.',
+            ));
+        }
+
+        $this->json($respuesta);
+    }
+
+    public function ajaxGetMapaAfiliados()
+    {
+        $this->exigirAjax();
+        $obra = $this->obraMapa();
+        if ($obra === '') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Seleccione una obra social.',
+            ));
+        }
+
+        try {
+            $modelo = new MapaModel();
+            $respuesta = $modelo->puntosAfiliados($obra);
+        } catch (Exception $e) {
+            error_log('DashboardController::ajaxGetMapaAfiliados — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudo leer el padrón para el mapa.',
+            ));
+        }
+
+        $this->json($respuesta);
+    }
+
+    public function ajaxGetMapaSinUbicar()
+    {
+        $this->exigirAjax();
+        $obra = $this->obraMapa();
+        if ($obra === '') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Seleccione una obra social.',
+            ));
+        }
+
+        try {
+            $modelo = new MapaModel();
+            $respuesta = $modelo->listarSinUbicar($obra);
+        } catch (Exception $e) {
+            error_log('DashboardController::ajaxGetMapaSinUbicar — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudo armar el listado de afiliados sin ubicar.',
+            ));
+        }
+
+        $this->json($respuesta);
+    }
+
+    public function ajaxGuardarMapaCorreccion()
+    {
+        $this->exigirAjax();
+        $obra = $this->obraMapa();
+        if ($obra === '') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Seleccione una obra social.',
+            ));
+        }
+
+        $datos = array(
+            'afiliado'  => isset($_POST['afiliado']) ? $_POST['afiliado'] : '',
+            'nombre'    => isset($_POST['nombre']) ? $_POST['nombre'] : '',
+            'direccion' => isset($_POST['direccion']) ? $_POST['direccion'] : '',
+            'telefono'  => isset($_POST['telefono']) ? $_POST['telefono'] : '',
+            'localidad' => isset($_POST['localidad']) ? $_POST['localidad'] : '',
+            'zona'      => isset($_POST['zona']) ? $_POST['zona'] : '',
+        );
+
+        try {
+            $modelo = new MapaModel();
+            $respuesta = $modelo->guardarCorreccion($obra, $datos);
+        } catch (Exception $e) {
+            error_log('DashboardController::ajaxGuardarMapaCorreccion — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudo guardar la corrección.',
+            ));
+        }
+
+        $this->json($respuesta);
+    }
+
+    public function ajaxGetMapaPrestadores()
+    {
+        $this->exigirAjax();
+        $obra = $this->obraMapa();
+        if ($obra === '') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Seleccione una obra social.',
+            ));
+        }
+
+        try {
+            $modelo = new MapaModel();
+            $respuesta = $modelo->puntosPrestadores($obra);
+        } catch (Exception $e) {
+            error_log('DashboardController::ajaxGetMapaPrestadores — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudieron ubicar las sucursales.',
+            ));
+        }
+
+        $this->json($respuesta);
+    }
+
+    private function obraMapa()
+    {
+        $obra = isset($_POST['obrasoc']) ? strtoupper(trim((string) $_POST['obrasoc'])) : '';
+        if ($obra !== '' && !preg_match('/^[A-Za-z0-9 .\/\-]{1,12}$/', $obra)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La obra social no es válida.',
+            ));
+        }
+        return $obra;
+    }
+
+    private function exigirAjax()
+    {
+        if (!$this->estaLogueado()) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La sesión expiró. Vuelva a ingresar.',
+            ));
+        }
+
+        if (!isset($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Método no permitido.',
+            ));
+        }
+
+        $tokenSesion = isset($_SESSION['csrf_token']) ? (string) $_SESSION['csrf_token'] : '';
+        $tokenPost = isset($_POST['csrf_token']) ? (string) $_POST['csrf_token'] : '';
+        if ($tokenSesion === '' || $tokenPost === '' || !hash_equals($tokenSesion, $tokenPost)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La sesión del formulario venció. Recargue la página.',
+            ));
+        }
     }
 
     public function administradores()

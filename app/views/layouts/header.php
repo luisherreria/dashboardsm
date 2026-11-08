@@ -80,6 +80,11 @@ $esAdmin = ($rolSesion === 'admin');
             <i class="fa-solid fa-chart-line w-6 text-center text-[#1565c0]"></i>
             <span>Evolución de Padrones</span>
         </a>
+        <a href="index.php?c=dashboard&a=mapa"
+           class="flex items-center gap-3 border-b border-slate-100 px-5 py-3 text-sm hover:bg-blue-50 hover:text-[#0d47a1] <?php echo $menuActivo === 'mapa' ? 'bg-blue-50 text-[#0d47a1]' : 'text-slate-700'; ?>">
+            <i class="fa-solid fa-map-location-dot w-6 text-center text-[#1565c0]"></i>
+            <span>Mapa de cobertura</span>
+        </a>
         <a href="index.php?c=auditoria&a=controlPrestadores"
            class="flex items-center gap-3 border-b border-slate-100 px-5 py-3 text-sm hover:bg-blue-50 hover:text-[#0d47a1] <?php echo $menuActivo === 'auditoria' ? 'bg-blue-50 text-[#0d47a1]' : 'text-slate-700'; ?>">
             <i class="fa-solid fa-user-doctor w-6 text-center text-[#1565c0]"></i>
@@ -100,7 +105,12 @@ $esAdmin = ($rolSesion === 'admin');
     </nav>
 </aside>
 
-<div class="mx-auto max-w-7xl px-4 pb-20 pt-[72px]">
+<?php
+if (!isset($contenedorClase) || $contenedorClase === '') {
+    $contenedorClase = 'mx-auto max-w-7xl px-4 pb-20 pt-[72px]';
+}
+?>
+<div class="<?php echo h($contenedorClase); ?>">
     <?php if (count($breadcrumb) > 0): ?>
     <nav class="mb-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
         <?php foreach ($breadcrumb as $i => $item): ?>

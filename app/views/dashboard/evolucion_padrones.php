@@ -14,6 +14,13 @@ $accesos = array(
         'texto' => 'Seguimiento del padrón',
     ),
     array(
+        'id'    => 'mapa',
+        'label' => 'Mapa de cobertura',
+        'href'  => 'index.php?c=dashboard&a=mapa',
+        'icon'  => 'fa-solid fa-map-location-dot',
+        'texto' => 'Afiliados y prestadores',
+    ),
+    array(
         'id'    => 'auditoria',
         'label' => 'Auditoría Consumo',
         'href'  => 'index.php?c=auditoria&a=controlPrestadores',
@@ -371,7 +378,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                 <i class="fa-solid fa-chart-bar text-[#1565c0]"></i>
                 Pirámide por edad y sexo
             </div>
-            <div class="relative h-96">
+            <div class="relative h-[34rem]">
                 <canvas id="graficoEtario"></canvas>
             </div>
             <div id="tablaDiscapacidadEtaria" class="mt-3 overflow-x-auto text-xs text-slate-700"></div>
@@ -380,7 +387,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
                     <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
                     Análisis del Indicador y Diagnóstico
                 </div>
-                <p class="mb-2 text-xs text-slate-600" id="descTecnica_etario">Distribuye la cartera por edad al cierre del período y por sexo. Las barras de discapacidad son un subconjunto del mismo rango: enrol1 que contiene DISCAP. Población general no se cuenta ahí.</p>
+                <p class="mb-2 text-xs text-slate-600" id="descTecnica_etario">Distribuye la cartera por edad al cierre del período y por sexo. Cada condición de enrol1 (discapacidad, diabetes, HIV, oncología, alto valor, PMI y las demás) es una barra del mismo rango. Población general no entra en esas barras. Abajo queda siempre la suma total de discapacidad.</p>
                 <div class="space-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium text-slate-800" id="insightDinamico_etario">
                     <p>El diagnóstico se calcula al actualizar el filtro.</p>
                 </div>
@@ -1494,7 +1501,8 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             return 'Sin corte activo para la obra elegida.';
         }
         var obra = corte.obra ? corte.obra : 'todas las obras del corte activo';
-        return 'Corte ' + corte.periodo + ' · ' + obra + ' · ' + fmtEntero(corte.total) + ' afiliados';
+        var origen = corte.archivo ? (' · ' + corte.archivo) : (corte.fuente === 'unicos' ? ' · unicos' : '');
+        return 'Corte ' + corte.periodo + ' · ' + obra + origen + ' · ' + fmtEntero(corte.total) + ' afiliados';
     }
 
     function dibujarFamiliar(bloque) {
@@ -1566,27 +1574,68 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
         if (!caja) {
             return;
         }
-        var disca = bloque.discapacidad || null;
-        if (!disca || !disca.rangos || Number(disca.total) === 0) {
-            caja.innerHTML = '';
-            return;
+        var disca = bloque.discapacidad || { total: 0, porcentaje: 0, rangos: [] };
+        var pct = String(disca.porcentaje == null ? 0 : disca.porcentaje).replace('.', ',');
+        var html = '<p class="mb-1 font-semibold text-slate-800">Suma total de discapacidad: '
+            + fmtEntero(disca.total) + ' (' + pct + ' %)</p>';
+        var rangos = disca.rangos || [];
+        var sumaM = 0;
+        var sumaF = 0;
+        var sumaT = 0;
+        if (rangos.length) {
+            html += '<table class="w-full"><thead><tr class="text-left text-[11px] uppercase text-slate-500">'
+                + '<th class="px-2 py-1">Rango</th><th class="px-2 py-1 text-right">M</th><th class="px-2 py-1 text-right">F</th><th class="px-2 py-1 text-right">Total</th>'
+                + '</tr></thead><tbody>';
+            var i;
+            for (i = 0; i < rangos.length; i++) {
+                var fila = rangos[i];
+                sumaM += Number(fila.m) || 0;
+                sumaF += Number(fila.f) || 0;
+                sumaT += Number(fila.total) || 0;
+                html += '<tr class="border-t border-slate-100">'
+                    + '<td class="px-2 py-1">' + escaparHtml(fila.rango || '') + '</td>'
+                    + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.m) + '</td>'
+                    + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.f) + '</td>'
+                    + '<td class="px-2 py-1 text-right font-semibold">' + fmtEntero(fila.total) + '</td>'
+                    + '</tr>';
+            }
+            html += '<tr class="border-t border-slate-300 font-semibold">'
+                + '<td class="px-2 py-1">Total</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(sumaM) + '</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(sumaF) + '</td>'
+                + '<td class="px-2 py-1 text-right">' + fmtEntero(disca.total) + '</td>'
+                + '</tr></tbody></table>';
         }
-        var html = '<p class="mb-1 font-semibold text-slate-700">Discapacidad por edad y sexo: '
-            + fmtEntero(disca.total) + ' (' + String(disca.porcentaje).replace('.', ',') + ' %)</p>'
-            + '<table class="w-full"><thead><tr class="text-left text-[11px] uppercase text-slate-500">'
-            + '<th class="px-2 py-1">Rango</th><th class="px-2 py-1 text-right">M</th><th class="px-2 py-1 text-right">F</th><th class="px-2 py-1 text-right">Total</th>'
-            + '</tr></thead><tbody>';
-        var i;
-        for (i = 0; i < disca.rangos.length; i++) {
-            var fila = disca.rangos[i];
-            html += '<tr class="border-t border-slate-100">'
-                + '<td class="px-2 py-1">' + escaparHtml(fila.rango || '') + '</td>'
-                + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.m) + '</td>'
-                + '<td class="px-2 py-1 text-right">' + fmtEntero(fila.f) + '</td>'
-                + '<td class="px-2 py-1 text-right font-semibold">' + fmtEntero(fila.total) + '</td>'
-                + '</tr>';
+        var condiciones = bloque.condiciones || [];
+        var otras = [];
+        var k;
+        for (k = 0; k < condiciones.length; k++) {
+            if (condiciones[k].label === 'Discapacidad') {
+                continue;
+            }
+            if ((Number(condiciones[k].total) || 0) > 0) {
+                otras.push(condiciones[k]);
+            }
         }
-        html += '</tbody></table>';
+        if (otras.length && rangos.length) {
+            html += '<p class="mb-1 mt-3 font-semibold text-slate-700">Resto de condiciones por edad</p>'
+                + '<table class="w-full"><thead><tr class="text-left text-[11px] uppercase text-slate-500">'
+                + '<th class="px-2 py-1">Condición</th>';
+            var c;
+            for (c = 0; c < rangos.length; c++) {
+                html += '<th class="px-2 py-1 text-right">' + escaparHtml(rangos[c].rango || '') + '</th>';
+            }
+            html += '<th class="px-2 py-1 text-right">Total</th></tr></thead><tbody>';
+            for (k = 0; k < otras.length; k++) {
+                html += '<tr class="border-t border-slate-100"><td class="px-2 py-1">' + escaparHtml(otras[k].label || '') + '</td>';
+                var valores = otras[k].data || [];
+                for (c = 0; c < rangos.length; c++) {
+                    html += '<td class="px-2 py-1 text-right">' + fmtEntero(valores[c] || 0) + '</td>';
+                }
+                html += '<td class="px-2 py-1 text-right font-semibold">' + fmtEntero(otras[k].total) + '</td></tr>';
+            }
+            html += '</tbody></table>';
+        }
         caja.innerHTML = html;
     }
 
@@ -1652,13 +1701,13 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             for (j = 0; j < valores.length; j++) {
                 suma += Number(valores[j]) || 0;
             }
-            if ((series[i].sexo === 'O' || series[i].sexo === 'DM' || series[i].sexo === 'DF' || series[i].sexo === 'DO') && suma === 0) {
+            if (series[i].sexo === 'O' && suma === 0) {
                 continue;
             }
             datasets.push({
                 label: series[i].label,
                 data: valores,
-                backgroundColor: colores[series[i].sexo] || '#64748b'
+                backgroundColor: series[i].color || colores[series[i].sexo] || '#64748b'
             });
         }
         chartEtario = new Chart(document.getElementById('graficoEtario'), {

@@ -6,6 +6,7 @@
  *   index.php?c=auth&a=ajaxLogin      → POST JSON
  *   index.php?c=auth&a=logout
  *   index.php?c=dashboard&a=evolucionPadrones
+ *   index.php?c=dashboard&a=mapa
  *   index.php?c=dashboard&a=administradores
  *
  * Compatible con PHP 5.6.
@@ -30,7 +31,10 @@ $esAjax = ($accionPedida === 'ajaxlogin'
     || $accionPedida === 'ajaxchatai'
     || $accionPedida === 'ajaxenviarinformeai'
     || $accionPedida === 'ajaxobtenerreglasia'
-    || $accionPedida === 'ajaxguardarreglasia');
+    || $accionPedida === 'ajaxguardarreglasia'
+    || $accionPedida === 'ajaxgetmapaapreparar'
+    || $accionPedida === 'ajaxgetmapaafiliados'
+    || $accionPedida === 'ajaxgetmapaprestadores');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -107,6 +111,12 @@ $mapa = array(
             'ajaxEnviarInformeAi' => true,
             'ajaxObtenerReglasIa' => true,
             'ajaxGuardarReglasIa' => true,
+            'mapa' => true,
+            'ajaxGetMapaPreparar' => true,
+            'ajaxGetMapaAfiliados' => true,
+            'ajaxGetMapaPrestadores' => true,
+            'ajaxGetMapaSinUbicar' => true,
+            'ajaxGuardarMapaCorreccion' => true,
             'administradores' => true,
         ),
         'publico'  => array(),
