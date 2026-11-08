@@ -360,6 +360,7 @@ class MapaModel
             $unicas[] = $fila;
         }
 
+        $this->precargarProvincias($obra);
         $georef = true;
         $inicio = microtime(true);
         $avance = $this->geocodificarPrestadores($unicas, $inicio, $georef);
@@ -446,6 +447,26 @@ class MapaModel
             '#78909c', '#006064', '#f06292', '#37474f', '#b0bec5',
             '#880e4f', '#ce93d8', '#ffab91', '#546e7a', '#f48fb1', '#4db6ac',
         );
+        $conteoZona = array();
+        foreach ($unicas as $fila) {
+            $zonaNombre = trim((string) $fila['zona']);
+            if ($zonaNombre === '') {
+                $zonaNombre = 'Sin zona';
+            }
+            if (!isset($conteoZona[$zonaNombre])) {
+                $conteoZona[$zonaNombre] = 0;
+            }
+            $conteoZona[$zonaNombre]++;
+        }
+        arsort($conteoZona);
+        $provincias = array();
+        foreach ($conteoZona as $zonaNombre => $cantidad) {
+            $provincias[] = array(
+                'zona'  => $zonaNombre,
+                'total' => (int) $cantidad,
+            );
+        }
+
         $categorias = array();
         $iCat = 0;
         foreach ($conteoCat as $codigo => $cantidad) {
@@ -467,6 +488,7 @@ class MapaModel
             'georef'      => $georef,
             'message'     => $mensaje,
             'categorias'  => $categorias,
+            'provincias'  => $provincias,
             'puntos'      => $puntos,
         );
     }
@@ -691,19 +713,59 @@ class MapaModel
             isset($fila['localidad']) ? $fila['localidad'] : '',
             isset($fila['zona']) ? $fila['zona'] : ''
         );
-        if ($lugar === '' || $this->localidadAmbigua($lugar, isset($fila['zona']) ? $fila['zona'] : '', isset($fila['dirmap']) ? $fila['dirmap'] : '')) {
-            return $vacio;
+        $lugarUtil = $lugar !== '' && !$this->localidadAmbigua($lugar, isset($fila['zona']) ? $fila['zona'] : '', isset($fila['dirmap']) ? $fila['dirmap'] : '');
+        if ($lugarUtil) {
+            $prov = $this->provinciaDesdeZona(isset($fila['zona']) ? $fila['zona'] : '', isset($fila['dirmap']) ? $fila['dirmap'] : '');
+            $clave = 'L|' . $this->normalizar($lugar);
+            if ($this->normalizar($prov) !== '' && $prov !== 'caba') {
+                $clave .= '|' . $this->normalizar($prov);
+            }
+            if (!isset($cache[$clave])) {
+                return array('resuelto' => false, 'lat' => null, 'lng' => null, 'aprox' => 0);
+            }
+            if ((int) $cache[$clave]['ok'] === 1 && $this->puntoEnZona($cache[$clave], $fila)) {
+                return array(
+                    'resuelto' => true,
+                    'lat'      => round((float) $cache[$clave]['lat'], 6),
+                    'lng'      => round((float) $cache[$clave]['lng'], 6),
+                    'aprox'    => 1,
+                );
+            }
         }
-        $prov = $this->provinciaDesdeZona(isset($fila['zona']) ? $fila['zona'] : '', isset($fila['dirmap']) ? $fila['dirmap'] : '');
-        $clave = 'L|' . $this->normalizar($lugar);
-        if ($this->normalizar($prov) !== '' && $prov !== 'caba') {
-            $clave .= '|' . $this->normalizar($prov);
+        $porProvincia = $this->puestoProvincia($fila, $cache);
+        if ($porProvincia !== null) {
+            return $porProvincia;
         }
-        if (!isset($cache[$clave])) {
-            return array('resuelto' => false, 'lat' => null, 'lng' => null, 'aprox' => 0);
+        return $vacio;
+    }
+
+    private function puestoProvincia($fila, $cache)
+    {
+        $zona = isset($fila['zona']) ? $fila['zona'] : '';
+        $z = $this->normalizar($zona);
+        if ($z === '' || $z === 'ZONA' || strpos($z, 'GBA') === 0) {
+            return null;
         }
-        if ((int) $cache[$clave]['ok'] !== 1 || !$this->puntoEnZona($cache[$clave], $fila)) {
-            return $vacio;
+        if ($z === 'CAPITAL FEDERAL' || $z === 'CABA') {
+            $fijo = $this->puntoCapital('Capital Federal');
+            if ($fijo === null) {
+                return null;
+            }
+            return array(
+                'resuelto' => true,
+                'lat'      => $fijo['lat'],
+                'lng'      => $fijo['lng'],
+                'aprox'    => 1,
+            );
+        }
+        $prov = $this->provinciaDesdeZona($zona, isset($fila['dirmap']) ? $fila['dirmap'] : '');
+        if ($prov === '' || $prov === 'caba') {
+            return null;
+        }
+        $nombre = $this->nombreProvincia($prov);
+        $clave = 'L|' . $this->normalizar($nombre) . '|' . $this->normalizar($nombre);
+        if (!isset($cache[$clave]) || (int) $cache[$clave]['ok'] !== 1) {
+            return null;
         }
         return array(
             'resuelto' => true,
