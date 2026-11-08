@@ -124,7 +124,7 @@ $sectores = array(
         <div class="mb-3 flex items-start justify-between gap-2">
             <div>
                 <h2 class="text-sm font-bold text-slate-800">Autorizadas y rechazadas por día</h2>
-                <p class="mt-1 text-xs text-slate-500">AMB, SAN y MED son órdenes autorizadas. TOTPRAC suma las prácticas de cartilla.detauto y cartilla.sanautod. Un clic en la cantidad abre ese grupo.</p>
+                <p class="mt-1 text-xs text-slate-500">AMB y SAN son órdenes autorizadas por fecha de autorización. RECH cuenta órdenes con fecha de carga y estado rechazada. TOTPRAC suma las prácticas de cartilla.detauto y cartilla.sanautod.</p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
                 <button type="button" class="js-excel inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" data-cual="estados">
@@ -140,11 +140,10 @@ $sectores = array(
             <table class="min-w-full text-left text-sm">
                 <thead class="bg-slate-900 text-xs uppercase tracking-wide text-slate-100">
                     <tr>
-                        <th class="whitespace-nowrap px-3 py-2 font-semibold" title="Fecha de autorización">Fecha</th>
+                        <th class="whitespace-nowrap px-3 py-2 font-semibold" title="AMB y SAN usan la fecha de autorización. RECH usa la fecha de la orden.">Fecha</th>
                         <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Ambulatorio">AMB</th>
                         <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Sanatorial">SAN</th>
-                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Medicamentos">MED</th>
-                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Rechazadas">RECH</th>
+                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Rechazadas por fecha de la orden">RECH</th>
                         <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Total de prácticas autorizadas">TOTPRAC</th>
                         <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Autorizadas más rechazadas">TOTAL</th>
                     </tr>
@@ -321,7 +320,7 @@ $sectores = array(
         var i;
         var html = '';
         if (!filas || !filas.length) {
-            filaVacia('cuerpoEstados', 7, 'No hay autorizadas ni rechazadas en ese rango.');
+            filaVacia('cuerpoEstados', 6, 'No hay autorizadas ni rechazadas en ese rango.');
             badge.textContent = '0';
             return;
         }
@@ -331,7 +330,6 @@ $sectores = array(
                 + '<td class="px-3 py-2 font-medium text-slate-800">' + fechaCorta(fila.dia) + '</td>'
                 + celdaNumero(fila.dia, 'estado', 'ambulatorio', 'AUTORIZADA', fila.ambulatorio, 'text-emerald-700')
                 + celdaNumero(fila.dia, 'estado', 'sanatorial', 'AUTORIZADA', fila.sanatorial, 'text-emerald-700')
-                + celdaNumero(fila.dia, 'estado', 'medicamentos', 'AUTORIZADA', fila.medicamentos, 'text-emerald-700')
                 + celdaNumero(fila.dia, 'estado', '', 'RECHAZADA', fila.rechazadas, 'text-red-700')
                 + '<td class="px-3 py-2 text-right font-semibold text-[#0d47a1]">' + entero(fila.practicas) + '</td>'
                 + celdaNumero(fila.dia, 'estado', '', 'AMBAS', fila.total, 'text-slate-900')
@@ -510,7 +508,6 @@ $sectores = array(
                     fechaCorta(datosEstados[j].dia),
                     entero(datosEstados[j].ambulatorio),
                     entero(datosEstados[j].sanatorial),
-                    entero(datosEstados[j].medicamentos),
                     entero(datosEstados[j].rechazadas),
                     entero(datosEstados[j].practicas),
                     entero(datosEstados[j].total)
@@ -519,7 +516,7 @@ $sectores = array(
             return {
                 titulo: 'Autorizadas y rechazadas por día',
                 nombre: 'ordenes-autorizadas',
-                columnas: ['Fecha', 'AMB', 'SAN', 'MED', 'RECH', 'TOTPRAC', 'TOTAL'],
+                columnas: ['Fecha', 'AMB', 'SAN', 'RECH', 'TOTPRAC', 'TOTAL'],
                 filas: estados
             };
         }

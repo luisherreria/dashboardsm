@@ -81,26 +81,44 @@ class SectoresModel
     {
         $mapa = array();
         $fuentes = $this->fuentes();
+        $rango = array(
+            ':desde' => $desde . ' 00:00:00',
+            ':hasta' => $hastaExclusivo . ' 00:00:00',
+        );
         foreach ($fuentes as $fuente) {
-            $sql = "SELECT DATE(COFECAUTO) AS dia,
-                           SUM(CASE WHEN UPPER(TRIM(COESTADO)) = 'AUTORIZADA' THEN 1 ELSE 0 END) AS autorizadas,
-                           SUM(CASE WHEN UPPER(TRIM(COESTADO)) = 'RECHAZADA' THEN 1 ELSE 0 END) AS rechazadas
+            if ($fuente['clave'] === 'medicamentos') {
+                continue;
+            }
+            $sql = "SELECT DATE(COFECAUTO) AS dia, COUNT(*) AS autorizadas
                       FROM " . $fuente['tabla'] . "
                      WHERE COFECAUTO >= :desde AND COFECAUTO < :hasta
-                       AND UPPER(TRIM(COESTADO)) IN ('AUTORIZADA', 'RECHAZADA')
+                       AND UPPER(TRIM(COESTADO)) = 'AUTORIZADA'
                      GROUP BY DATE(COFECAUTO)";
-            $filas = $this->consultar($sql, array(
-                ':desde' => $desde . ' 00:00:00',
-                ':hasta' => $hastaExclusivo . ' 00:00:00',
-            ));
+            $filas = $this->consultar($sql, $rango);
             foreach ($filas as $fila) {
                 $dia = substr((string) $fila['dia'], 0, 10);
                 if (!isset($mapa[$dia])) {
                     $mapa[$dia] = $this->filaEstadoVacia($dia);
                 }
-                $mapa[$dia][$fuente['clave']] = (int) $fila['autorizadas'];
-                $mapa[$dia]['total'] += (int) $fila['autorizadas'] + (int) $fila['rechazadas'];
-                $mapa[$dia]['rechazadas'] += (int) $fila['rechazadas'];
+                $cantidad = (int) $fila['autorizadas'];
+                $mapa[$dia][$fuente['clave']] = $cantidad;
+                $mapa[$dia]['total'] += $cantidad;
+            }
+
+            $sqlRechazo = "SELECT DATE(COFECHA) AS dia, COUNT(*) AS rechazadas
+                             FROM " . $fuente['tabla'] . "
+                            WHERE COFECHA >= :desde AND COFECHA < :hasta
+                              AND UPPER(TRIM(COESTADO)) = 'RECHAZADA'
+                            GROUP BY DATE(COFECHA)";
+            $rechazos = $this->consultar($sqlRechazo, $rango);
+            foreach ($rechazos as $fila) {
+                $dia = substr((string) $fila['dia'], 0, 10);
+                if (!isset($mapa[$dia])) {
+                    $mapa[$dia] = $this->filaEstadoVacia($dia);
+                }
+                $cantidad = (int) $fila['rechazadas'];
+                $mapa[$dia]['rechazadas'] += $cantidad;
+                $mapa[$dia]['total'] += $cantidad;
             }
 
             if ($fuente['detalle'] === '') {
@@ -114,10 +132,7 @@ class SectoresModel
                                 AND UPPER(TRIM(o.COESTADO)) = 'AUTORIZADA'
                                 AND TRIM(o.CONROAUTO) <> ''
                               GROUP BY DATE(o.COFECAUTO)";
-            $practicas = $this->consultar($sqlPracticas, array(
-                ':desde' => $desde . ' 00:00:00',
-                ':hasta' => $hastaExclusivo . ' 00:00:00',
-            ));
+            $practicas = $this->consultar($sqlPracticas, $rango);
             foreach ($practicas as $fila) {
                 $dia = substr((string) $fila['dia'], 0, 10);
                 if (!isset($mapa[$dia])) {
@@ -154,13 +169,26 @@ class SectoresModel
         $filas = array();
         $fuentes = $this->fuentes();
         foreach ($fuentes as $fuente) {
+            if ($fuente['clave'] === 'medicamentos') {
+                continue;
+            }
             if ($origen !== '' && $origen !== $fuente['clave']) {
                 continue;
             }
-            $parte = $this->leerOrdenes($fuente, 'COFECAUTO', $dia, $estado, true);
-            foreach ($parte as $fila) {
-                $fila['origen_clave'] = $fuente['clave'];
-                $filas[] = $fila;
+            $partes = array();
+            if ($estado === 'RECHAZADA') {
+                $partes[] = $this->leerOrdenes($fuente, 'COFECHA', $dia, 'RECHAZADA', true);
+            } elseif ($estado === 'AMBAS') {
+                $partes[] = $this->leerOrdenes($fuente, 'COFECAUTO', $dia, 'AUTORIZADA', true);
+                $partes[] = $this->leerOrdenes($fuente, 'COFECHA', $dia, 'RECHAZADA', true);
+            } else {
+                $partes[] = $this->leerOrdenes($fuente, 'COFECAUTO', $dia, $estado, true);
+            }
+            foreach ($partes as $parte) {
+                foreach ($parte as $fila) {
+                    $fila['origen_clave'] = $fuente['clave'];
+                    $filas[] = $fila;
+                }
             }
         }
 
