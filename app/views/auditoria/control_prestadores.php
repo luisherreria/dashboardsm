@@ -303,7 +303,7 @@ if (count($periodos) > 0) {
         if (exportesDisponibles()) {
             botones.splice(1, 0,
                 { extend: 'excelHtml5', text: '<i class="fa-solid fa-file-excel"></i> Excel', title: titulo, exportOptions: exportar },
-                { extend: 'pdfHtml5', text: '<i class="fa-solid fa-file-pdf"></i> PDF', title: titulo, orientation: 'landscape', pageSize: 'A4', exportOptions: exportar }
+                { extend: 'pdfHtml5', text: '<i class="fa-solid fa-file-pdf"></i> PDF', title: titulo, orientation: 'landscape', pageSize: 'A4', download: 'open', exportOptions: exportar }
             );
         }
         return botones;
@@ -319,7 +319,7 @@ if (count($periodos) > 0) {
         var titulo = meta.titulo;
         var exportar = meta.exportar;
         meta.tabla.button().add(1, { extend: 'excelHtml5', text: '<i class="fa-solid fa-file-excel"></i> Excel', title: titulo, exportOptions: exportar });
-        meta.tabla.button().add(2, { extend: 'pdfHtml5', text: '<i class="fa-solid fa-file-pdf"></i> PDF', title: titulo, orientation: 'landscape', pageSize: 'A4', exportOptions: exportar });
+        meta.tabla.button().add(2, { extend: 'pdfHtml5', text: '<i class="fa-solid fa-file-pdf"></i> PDF', title: titulo, orientation: 'landscape', pageSize: 'A4', download: 'open', exportOptions: exportar });
     }
 
     function destruirTabla(id) {

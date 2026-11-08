@@ -83,7 +83,7 @@ class SectoresController extends Controller
             ));
         }
 
-        if ($modo === 'estado' && $estado !== 'AUTORIZADA' && $estado !== 'RECHAZADA') {
+        if ($modo === 'estado' && $estado !== 'AUTORIZADA' && $estado !== 'RECHAZADA' && $estado !== 'AMBAS') {
             $this->json(array(
                 'status'  => 'error',
                 'message' => 'Seleccione autorizadas o rechazadas.',
@@ -95,7 +95,7 @@ class SectoresController extends Controller
             if ($modo === 'cargadas') {
                 $filas = $modelo->explosionCargadas($dia, $origen);
             } else {
-                $filas = $modelo->explosionEstado($dia, $estado);
+                $filas = $modelo->explosionEstado($dia, $estado, $origen);
             }
         } catch (Exception $e) {
             error_log('SectoresController::ajaxExplosionOrdenes — ' . $e->getMessage());
@@ -107,6 +107,44 @@ class SectoresController extends Controller
 
         if (count($filas) > 2000) {
             $filas = array_slice($filas, 0, 2000);
+        }
+
+        $this->json(array(
+            'status'  => 'success',
+            'message' => '',
+            'filas'   => $filas,
+            'total'   => count($filas),
+        ));
+    }
+
+    public function ajaxExplosionPracticas()
+    {
+        $this->exigirPost();
+        $origen = isset($_POST['origen']) ? trim((string) $_POST['origen']) : '';
+        $nro = isset($_POST['conroauto']) ? trim((string) $_POST['conroauto']) : '';
+
+        if ($origen !== 'ambulatorio' && $origen !== 'sanatorial' && $origen !== 'medicamentos') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'El origen de la orden no es válido.',
+            ));
+        }
+        if ($nro === '' || !preg_match('/^[0-9]{1,14}$/', $nro)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'La orden no tiene un número de autorización para buscar las prácticas.',
+            ));
+        }
+
+        try {
+            $modelo = new SectoresModel();
+            $filas = $modelo->practicasDeOrden($origen, $nro);
+        } catch (Exception $e) {
+            error_log('SectoresController::ajaxExplosionPracticas — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudieron leer las prácticas de la orden.',
+            ));
         }
 
         $this->json(array(

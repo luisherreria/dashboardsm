@@ -36,7 +36,8 @@ $esAjax = ($accionPedida === 'ajaxlogin'
     || $accionPedida === 'ajaxgetmapaafiliados'
     || $accionPedida === 'ajaxgetmapaprestadores'
     || $accionPedida === 'ajaxresumenordenes'
-    || $accionPedida === 'ajaxexplosionordenes');
+    || $accionPedida === 'ajaxexplosionordenes'
+    || $accionPedida === 'ajaxexplosionpracticas');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -147,6 +148,7 @@ $mapa = array(
             'auditoriaFacturas' => true,
             'ajaxResumenOrdenes' => true,
             'ajaxExplosionOrdenes' => true,
+            'ajaxExplosionPracticas' => true,
         ),
         'publico'  => array(),
         'default'  => 'ordenes',

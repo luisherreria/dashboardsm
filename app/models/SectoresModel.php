@@ -96,14 +96,34 @@ class SectoresModel
             foreach ($filas as $fila) {
                 $dia = substr((string) $fila['dia'], 0, 10);
                 if (!isset($mapa[$dia])) {
-                    $mapa[$dia] = array(
-                        'dia'          => $dia,
-                        'autorizadas'  => 0,
-                        'rechazadas'   => 0,
-                    );
+                    $mapa[$dia] = $this->filaEstadoVacia($dia);
                 }
-                $mapa[$dia]['autorizadas'] += (int) $fila['autorizadas'];
+                $mapa[$dia][$fuente['clave']] = (int) $fila['autorizadas'];
+                $mapa[$dia]['total'] += (int) $fila['autorizadas'] + (int) $fila['rechazadas'];
                 $mapa[$dia]['rechazadas'] += (int) $fila['rechazadas'];
+            }
+
+            if ($fuente['detalle'] === '') {
+                continue;
+            }
+            $sqlPracticas = "SELECT DATE(o.COFECAUTO) AS dia, COUNT(*) AS practicas
+                               FROM " . $fuente['tabla'] . " o
+                               INNER JOIN " . $fuente['detalle'] . " d
+                                 ON d.CONUMERO = LPAD(TRIM(o.CONROAUTO), 10, '0')
+                              WHERE o.COFECAUTO >= :desde AND o.COFECAUTO < :hasta
+                                AND UPPER(TRIM(o.COESTADO)) = 'AUTORIZADA'
+                                AND TRIM(o.CONROAUTO) <> ''
+                              GROUP BY DATE(o.COFECAUTO)";
+            $practicas = $this->consultar($sqlPracticas, array(
+                ':desde' => $desde . ' 00:00:00',
+                ':hasta' => $hastaExclusivo . ' 00:00:00',
+            ));
+            foreach ($practicas as $fila) {
+                $dia = substr((string) $fila['dia'], 0, 10);
+                if (!isset($mapa[$dia])) {
+                    $mapa[$dia] = $this->filaEstadoVacia($dia);
+                }
+                $mapa[$dia]['practicas'] += (int) $fila['practicas'];
             }
         }
 
@@ -119,8 +139,9 @@ class SectoresModel
             if ($origen !== '' && $origen !== $fuente['clave']) {
                 continue;
             }
-            $parte = $this->leerOrdenes($fuente, 'COFECHA', $dia, '');
+            $parte = $this->leerOrdenes($fuente, 'COFECHA', $dia, '', false);
             foreach ($parte as $fila) {
+                $fila['origen_clave'] = $fuente['clave'];
                 $filas[] = $fila;
             }
         }
@@ -128,13 +149,17 @@ class SectoresModel
         return $filas;
     }
 
-    public function explosionEstado($dia, $estado)
+    public function explosionEstado($dia, $estado, $origen)
     {
         $filas = array();
         $fuentes = $this->fuentes();
         foreach ($fuentes as $fuente) {
-            $parte = $this->leerOrdenes($fuente, 'COFECAUTO', $dia, $estado);
+            if ($origen !== '' && $origen !== $fuente['clave']) {
+                continue;
+            }
+            $parte = $this->leerOrdenes($fuente, 'COFECAUTO', $dia, $estado, true);
             foreach ($parte as $fila) {
+                $fila['origen_clave'] = $fuente['clave'];
                 $filas[] = $fila;
             }
         }
@@ -142,8 +167,41 @@ class SectoresModel
         return $filas;
     }
 
-    private function leerOrdenes($fuente, $campoFecha, $dia, $estado)
+    public function practicasDeOrden($origen, $conroauto)
     {
+        $detalle = '';
+        $fuentes = $this->fuentes();
+        foreach ($fuentes as $fuente) {
+            if ($fuente['clave'] === $origen) {
+                $detalle = $fuente['detalle'];
+            }
+        }
+        if ($detalle === '') {
+            return array();
+        }
+
+        $nro = str_pad(trim($conroauto), 10, '0', STR_PAD_LEFT);
+        $sql = "SELECT TRIM(COCODPREST) AS cocodprest,
+                       TRIM(CONOMBPRES) AS conombpres
+                  FROM " . $detalle . "
+                 WHERE TRIM(CONUMERO) = :nro
+                 ORDER BY COCODPREST, CONOMBPRES";
+
+        return $this->consultar($sql, array(':nro' => $nro));
+    }
+
+    private function leerOrdenes($fuente, $campoFecha, $dia, $estado, $conPracticas)
+    {
+        $practicas = '';
+        if ($conPracticas && $fuente['detalle'] !== '') {
+            $practicas = ", TRIM(CONROAUTO) AS conroauto,
+                       (SELECT COUNT(*)
+                          FROM " . $fuente['detalle'] . " d
+                         WHERE TRIM(d.CONUMERO) = LPAD(TRIM(CONROAUTO), 10, '0')) AS practicas";
+        } elseif ($conPracticas) {
+            $practicas = ", TRIM(CONROAUTO) AS conroauto, 0 AS practicas";
+        }
+
         $sql = "SELECT DATE_FORMAT(" . $campoFecha . ", '%d/%m/%Y') AS fecha_grupo,
                        DATE_FORMAT(COFECHA, '%d/%m/%Y') AS cofecha,
                        DATE_FORMAT(COFECAUTO, '%d/%m/%Y') AS cofecauto,
@@ -155,7 +213,8 @@ class SectoresModel
                        TRIM(CAST(CONUMERO AS CHAR)) AS numero,
                        TRIM(COESTADO) AS coestado,
                        TRIM(CODIRPDF) AS archivo,
-                       :origen AS origen
+                       :origen AS origen"
+                       . $practicas . "
                   FROM " . $fuente['tabla'] . "
                  WHERE " . $campoFecha . " >= :desde AND " . $campoFecha . " < :hasta";
 
@@ -165,7 +224,9 @@ class SectoresModel
             ':hasta'  => date('Y-m-d', strtotime($dia . ' +1 day')) . ' 00:00:00',
         );
 
-        if ($estado !== '') {
+        if ($estado === 'AMBAS') {
+            $sql .= " AND UPPER(TRIM(COESTADO)) IN ('AUTORIZADA', 'RECHAZADA')";
+        } elseif ($estado !== '') {
             $sql .= ' AND UPPER(TRIM(COESTADO)) = :estado';
             $params[':estado'] = $estado;
         }
@@ -173,6 +234,19 @@ class SectoresModel
         $sql .= ' ORDER BY CONOMPAC, COOBRASOC';
 
         return $this->consultar($sql, $params);
+    }
+
+    private function filaEstadoVacia($dia)
+    {
+        return array(
+            'dia'          => $dia,
+            'ambulatorio'  => 0,
+            'sanatorial'   => 0,
+            'medicamentos' => 0,
+            'rechazadas'   => 0,
+            'practicas'    => 0,
+            'total'        => 0,
+        );
     }
 
     private function filaCargadaVacia($dia)
@@ -193,16 +267,19 @@ class SectoresModel
                 'clave'    => 'ambulatorio',
                 'etiqueta' => 'Ambulatorio',
                 'tabla'    => 'cartilla.ordenes',
+                'detalle'  => 'cartilla.detauto',
             ),
             array(
                 'clave'    => 'sanatorial',
                 'etiqueta' => 'Sanatorial',
                 'tabla'    => 'cartilla.sanorden',
+                'detalle'  => 'cartilla.sanautod',
             ),
             array(
                 'clave'    => 'medicamentos',
                 'etiqueta' => 'Medicamentos',
                 'tabla'    => 'cartilla.ordenes_medicamentos',
+                'detalle'  => '',
             ),
         );
     }

@@ -1191,7 +1191,7 @@ if (defined('JSON_UNESCAPED_UNICODE')) {
             buttons: [
                 { extend: 'copyHtml5', text: '<i class="fa-solid fa-copy"></i> Copiar', title: 'Evolución de padrones', exportOptions: exportar },
                 { extend: 'excelHtml5', text: '<i class="fa-solid fa-file-excel"></i> Excel', title: 'Evolucion de padrones', exportOptions: exportar },
-                { extend: 'pdfHtml5', text: '<i class="fa-solid fa-file-pdf"></i> PDF', title: 'Evolucion de padrones', orientation: 'landscape', pageSize: 'A4', exportOptions: exportar },
+                { extend: 'pdfHtml5', text: '<i class="fa-solid fa-file-pdf"></i> PDF', title: 'Evolucion de padrones', orientation: 'landscape', pageSize: 'A4', download: 'open', exportOptions: exportar },
                 { extend: 'print', text: '<i class="fa-solid fa-print"></i> Imprimir', title: 'Evolución de padrones', exportOptions: exportar }
             ],
             language: {

@@ -94,7 +94,15 @@ $sectores = array(
                 <h2 class="text-sm font-bold text-slate-800">Órdenes cargadas por día</h2>
                 <p class="mt-1 text-xs text-slate-500">Cada número es la cantidad de filas de ese día, según COFECHA. Un clic abre esas órdenes.</p>
             </div>
-            <span id="badgeCargadas" class="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-[#0d47a1]">0</span>
+            <div class="flex shrink-0 items-center gap-2">
+                <button type="button" class="js-excel inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" data-cual="cargadas">
+                    <i class="fa-solid fa-file-excel text-emerald-700"></i> Excel
+                </button>
+                <button type="button" class="js-pdf inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" data-cual="cargadas">
+                    <i class="fa-solid fa-file-pdf text-red-700"></i> PDF
+                </button>
+                <span id="badgeCargadas" class="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-[#0d47a1]">0</span>
+            </div>
         </div>
         <div class="overflow-x-auto">
             <table class="min-w-full text-left text-sm">
@@ -116,17 +124,29 @@ $sectores = array(
         <div class="mb-3 flex items-start justify-between gap-2">
             <div>
                 <h2 class="text-sm font-bold text-slate-800">Autorizadas y rechazadas por día</h2>
-                <p class="mt-1 text-xs text-slate-500">Mismas tablas, mirando COFECAUTO y COESTADO autorizada o rechazada. Un clic abre ese grupo.</p>
+                <p class="mt-1 text-xs text-slate-500">AMB, SAN y MED son órdenes autorizadas. TOTPRAC suma las prácticas de cartilla.detauto y cartilla.sanautod. Un clic en la cantidad abre ese grupo.</p>
             </div>
-            <span id="badgeEstados" class="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-[#0d47a1]">0</span>
+            <div class="flex shrink-0 items-center gap-2">
+                <button type="button" class="js-excel inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" data-cual="estados">
+                    <i class="fa-solid fa-file-excel text-emerald-700"></i> Excel
+                </button>
+                <button type="button" class="js-pdf inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" data-cual="estados">
+                    <i class="fa-solid fa-file-pdf text-red-700"></i> PDF
+                </button>
+                <span id="badgeEstados" class="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-[#0d47a1]">0</span>
+            </div>
         </div>
         <div class="overflow-x-auto">
             <table class="min-w-full text-left text-sm">
                 <thead class="bg-slate-900 text-xs uppercase tracking-wide text-slate-100">
                     <tr>
-                        <th class="px-3 py-2 font-semibold">Fecha autorización</th>
-                        <th class="px-3 py-2 text-right font-semibold">Autorizadas</th>
-                        <th class="px-3 py-2 text-right font-semibold">Rechazadas</th>
+                        <th class="whitespace-nowrap px-3 py-2 font-semibold" title="Fecha de autorización">Fecha</th>
+                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Ambulatorio">AMB</th>
+                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Sanatorial">SAN</th>
+                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Medicamentos">MED</th>
+                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Rechazadas">RECH</th>
+                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Total de prácticas autorizadas">TOTPRAC</th>
+                        <th class="whitespace-nowrap px-3 py-2 text-right font-semibold" title="Autorizadas más rechazadas">TOTAL</th>
                     </tr>
                 </thead>
                 <tbody id="cuerpoEstados" class="divide-y divide-slate-100"></tbody>
@@ -150,9 +170,17 @@ $sectores = array(
                 <h2 id="modalTitulo" class="text-sm font-bold">Órdenes</h2>
                 <p id="modalSubtitulo" class="text-xs text-white/75"></p>
             </div>
-            <button type="button" id="cerrarModalOrdenes" class="rounded-md p-2 hover:bg-white/15" aria-label="Cerrar">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
+            <div class="flex items-center gap-2">
+                <button type="button" class="js-excel inline-flex items-center gap-1 rounded-md border border-white/40 bg-white/15 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/25" data-cual="modal">
+                    <i class="fa-solid fa-file-excel"></i> Excel
+                </button>
+                <button type="button" class="js-pdf inline-flex items-center gap-1 rounded-md border border-white/40 bg-white/15 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/25" data-cual="modal">
+                    <i class="fa-solid fa-file-pdf"></i> PDF
+                </button>
+                <button type="button" id="cerrarModalOrdenes" class="rounded-md p-2 hover:bg-white/15" aria-label="Cerrar">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
         </div>
         <div class="min-h-0 flex-1 overflow-auto">
             <table class="min-w-full text-left text-xs">
@@ -167,6 +195,7 @@ $sectores = array(
                         <th class="px-3 py-2 font-semibold">Origen</th>
                         <th class="px-3 py-2 font-semibold">Estado</th>
                         <th class="px-3 py-2 font-semibold">Autorización</th>
+                        <th id="colPracticas" class="hidden px-3 py-2 text-right font-semibold">Prácticas</th>
                     </tr>
                 </thead>
                 <tbody id="cuerpoModal" class="divide-y divide-slate-100"></tbody>
@@ -175,11 +204,51 @@ $sectores = array(
     </div>
 </div>
 
+<div id="modalPracticas" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/50 p-4">
+    <div class="flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between bg-gradient-to-r from-[#0d47a1] to-[#1565c0] px-5 py-3 text-white">
+            <div>
+                <h2 id="practicasTitulo" class="text-sm font-bold">Prácticas autorizadas</h2>
+                <p id="practicasSubtitulo" class="text-xs text-white/75"></p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" class="js-excel inline-flex items-center gap-1 rounded-md border border-white/40 bg-white/15 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/25" data-cual="practicas">
+                    <i class="fa-solid fa-file-excel"></i> Excel
+                </button>
+                <button type="button" class="js-pdf inline-flex items-center gap-1 rounded-md border border-white/40 bg-white/15 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/25" data-cual="practicas">
+                    <i class="fa-solid fa-file-pdf"></i> PDF
+                </button>
+                <button type="button" id="cerrarModalPracticas" class="rounded-md p-2 hover:bg-white/15" aria-label="Cerrar">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+        <div class="min-h-0 flex-1 overflow-auto">
+            <table class="min-w-full text-left text-sm">
+                <thead class="sticky top-0 bg-slate-900 text-[11px] uppercase tracking-wide text-slate-100">
+                    <tr>
+                        <th class="px-3 py-2 font-semibold">Código</th>
+                        <th class="px-3 py-2 font-semibold">Práctica</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoPracticas" class="divide-y divide-slate-100"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 <script>
 (function () {
     var reporte = document.getElementById('reporteSectores').value;
     var errorCarga = <?php echo json_encode($errorCarga); ?>;
     var modal = document.getElementById('modalOrdenes');
+    var datosCargadas = [];
+    var datosEstados = [];
+    var datosModal = { titulo: '', subtitulo: '', filas: [], conPracticas: false };
+    var datosPracticas = { titulo: '', subtitulo: '', filas: [] };
+    var modalPracticas = document.getElementById('modalPracticas');
 
     function aviso(texto) {
         Swal.fire({
@@ -219,6 +288,7 @@ $sectores = array(
     }
 
     function pintarCargadas(filas) {
+        datosCargadas = filas || [];
         var cuerpo = document.getElementById('cuerpoCargadas');
         var badge = document.getElementById('badgeCargadas');
         var total = 0;
@@ -245,12 +315,13 @@ $sectores = array(
     }
 
     function pintarEstados(filas) {
+        datosEstados = filas || [];
         var cuerpo = document.getElementById('cuerpoEstados');
         var badge = document.getElementById('badgeEstados');
         var i;
         var html = '';
         if (!filas || !filas.length) {
-            filaVacia('cuerpoEstados', 3, 'No hay autorizadas ni rechazadas en ese rango.');
+            filaVacia('cuerpoEstados', 7, 'No hay autorizadas ni rechazadas en ese rango.');
             badge.textContent = '0';
             return;
         }
@@ -258,8 +329,12 @@ $sectores = array(
             var fila = filas[i];
             html += '<tr class="hover:bg-slate-50">'
                 + '<td class="px-3 py-2 font-medium text-slate-800">' + fechaCorta(fila.dia) + '</td>'
-                + celdaNumero(fila.dia, 'estado', '', 'AUTORIZADA', fila.autorizadas, 'text-emerald-700')
+                + celdaNumero(fila.dia, 'estado', 'ambulatorio', 'AUTORIZADA', fila.ambulatorio, 'text-emerald-700')
+                + celdaNumero(fila.dia, 'estado', 'sanatorial', 'AUTORIZADA', fila.sanatorial, 'text-emerald-700')
+                + celdaNumero(fila.dia, 'estado', 'medicamentos', 'AUTORIZADA', fila.medicamentos, 'text-emerald-700')
                 + celdaNumero(fila.dia, 'estado', '', 'RECHAZADA', fila.rechazadas, 'text-red-700')
+                + '<td class="px-3 py-2 text-right font-semibold text-[#0d47a1]">' + entero(fila.practicas) + '</td>'
+                + celdaNumero(fila.dia, 'estado', '', 'AMBAS', fila.total, 'text-slate-900')
                 + '</tr>';
         }
         cuerpo.innerHTML = html;
@@ -272,14 +347,21 @@ $sectores = array(
         return texto === '' ? '—' : texto;
     }
 
-    function abrirModal(titulo, subtitulo, filas) {
+    function abrirModal(titulo, subtitulo, filas, conPracticas) {
+        datosModal = { titulo: titulo, subtitulo: subtitulo, filas: filas || [], conPracticas: !!conPracticas };
         var cuerpo = document.getElementById('cuerpoModal');
+        var columna = document.getElementById('colPracticas');
         var i;
         var html = '';
         document.getElementById('modalTitulo').textContent = titulo;
         document.getElementById('modalSubtitulo').textContent = subtitulo;
+        if (conPracticas) {
+            columna.classList.remove('hidden');
+        } else {
+            columna.classList.add('hidden');
+        }
         if (!filas || !filas.length) {
-            cuerpo.innerHTML = '<tr><td colspan="9" class="px-3 py-8 text-center text-sm text-slate-400">No hay órdenes para mostrar.</td></tr>';
+            cuerpo.innerHTML = '<tr><td colspan="' + (conPracticas ? '10' : '9') + '" class="px-3 py-8 text-center text-sm text-slate-400">No hay órdenes para mostrar.</td></tr>';
         } else {
             for (i = 0; i < filas.length; i++) {
                 var fila = filas[i];
@@ -293,12 +375,53 @@ $sectores = array(
                     + '<td class="px-3 py-2 whitespace-nowrap">' + textoCelda(fila.origen) + '</td>'
                     + '<td class="px-3 py-2 whitespace-nowrap">' + textoCelda(fila.coestado) + '</td>'
                     + '<td class="px-3 py-2 whitespace-nowrap">' + textoCelda(fila.cofecauto) + '</td>'
+                    + (conPracticas ? celdaPracticas(fila) : '')
                     + '</tr>';
             }
             cuerpo.innerHTML = html;
         }
         modal.classList.remove('hidden');
         modal.classList.add('flex');
+    }
+
+    function celdaPracticas(fila) {
+        var n = Number(fila.practicas) || 0;
+        var nro = plano(fila.conroauto);
+        var clave = plano(fila.origen_clave);
+        if (n === 0 || nro === '') {
+            return '<td class="px-3 py-2 text-right text-slate-300">0</td>';
+        }
+        return '<td class="px-3 py-2 text-right">'
+            + '<button type="button" class="js-practicas font-semibold underline decoration-dotted text-[#0d47a1]" '
+            + 'data-origen="' + xml(clave) + '" data-nro="' + xml(nro) + '" data-paciente="' + xml(plano(fila.conompac)) + '">'
+            + entero(n) + '</button></td>';
+    }
+
+    function abrirPracticas(titulo, subtitulo, filas) {
+        datosPracticas = { titulo: titulo, subtitulo: subtitulo, filas: filas || [] };
+        var cuerpo = document.getElementById('cuerpoPracticas');
+        var i;
+        var html = '';
+        document.getElementById('practicasTitulo').textContent = titulo;
+        document.getElementById('practicasSubtitulo').textContent = subtitulo;
+        if (!filas || !filas.length) {
+            cuerpo.innerHTML = '<tr><td colspan="2" class="px-3 py-8 text-center text-sm text-slate-400">Esta orden no tiene prácticas cargadas.</td></tr>';
+        } else {
+            for (i = 0; i < filas.length; i++) {
+                html += '<tr class="hover:bg-slate-50">'
+                    + '<td class="px-3 py-2 whitespace-nowrap font-medium">' + textoCelda(filas[i].cocodprest) + '</td>'
+                    + '<td class="px-3 py-2">' + textoCelda(filas[i].conombpres) + '</td>'
+                    + '</tr>';
+            }
+            cuerpo.innerHTML = html;
+        }
+        modalPracticas.classList.remove('hidden');
+        modalPracticas.classList.add('flex');
+    }
+
+    function cerrarPracticas() {
+        modalPracticas.classList.add('hidden');
+        modalPracticas.classList.remove('flex');
     }
 
     function cerrarModal() {
@@ -348,6 +471,212 @@ $sectores = array(
         });
     }
 
+    function rangoTexto() {
+        return fechaCorta(document.getElementById('filtroDesde').value) + ' al ' + fechaCorta(document.getElementById('filtroHasta').value);
+    }
+
+    function plano(valor) {
+        if (valor === null || valor === undefined || String(valor) === '') {
+            return '';
+        }
+        return String(valor);
+    }
+
+    function cuadroExportable(cual) {
+        if (cual === 'cargadas') {
+            var filas = [];
+            var i;
+            for (i = 0; i < datosCargadas.length; i++) {
+                filas.push([
+                    fechaCorta(datosCargadas[i].dia),
+                    entero(datosCargadas[i].ambulatorio),
+                    entero(datosCargadas[i].sanatorial),
+                    entero(datosCargadas[i].medicamentos),
+                    entero(datosCargadas[i].total)
+                ]);
+            }
+            return {
+                titulo: 'Órdenes cargadas por día',
+                nombre: 'ordenes-cargadas',
+                columnas: ['Fecha', 'Ambulatorio', 'Sanatorial', 'Medicamentos', 'Total'],
+                filas: filas
+            };
+        }
+        if (cual === 'estados') {
+            var estados = [];
+            var j;
+            for (j = 0; j < datosEstados.length; j++) {
+                estados.push([
+                    fechaCorta(datosEstados[j].dia),
+                    entero(datosEstados[j].ambulatorio),
+                    entero(datosEstados[j].sanatorial),
+                    entero(datosEstados[j].medicamentos),
+                    entero(datosEstados[j].rechazadas),
+                    entero(datosEstados[j].practicas),
+                    entero(datosEstados[j].total)
+                ]);
+            }
+            return {
+                titulo: 'Autorizadas y rechazadas por día',
+                nombre: 'ordenes-autorizadas',
+                columnas: ['Fecha', 'AMB', 'SAN', 'MED', 'RECH', 'TOTPRAC', 'TOTAL'],
+                filas: estados
+            };
+        }
+        if (cual === 'practicas') {
+            var practicas = [];
+            var p;
+            for (p = 0; p < datosPracticas.filas.length; p++) {
+                practicas.push([
+                    plano(datosPracticas.filas[p].cocodprest),
+                    plano(datosPracticas.filas[p].conombpres)
+                ]);
+            }
+            return {
+                titulo: datosPracticas.titulo || 'Prácticas autorizadas',
+                nombre: 'practicas-autorizadas',
+                columnas: ['Código', 'Práctica'],
+                filas: practicas
+            };
+        }
+        var detalle = [];
+        var k;
+        for (k = 0; k < datosModal.filas.length; k++) {
+            var fila = datosModal.filas[k];
+            var linea = [
+                plano(fila.cofecha),
+                plano(fila.coobrasoc),
+                plano(fila.coprestado),
+                plano(fila.conomprest),
+                plano(fila.coafiliado),
+                plano(fila.conompac),
+                plano(fila.origen),
+                plano(fila.coestado),
+                plano(fila.cofecauto)
+            ];
+            if (datosModal.conPracticas) {
+                linea.push(entero(fila.practicas));
+            }
+            detalle.push(linea);
+        }
+        var columnasDetalle = ['Fecha', 'Obra social', 'Prestador', 'Nombre prestador', 'Afiliado', 'Paciente', 'Origen', 'Estado', 'Autorización'];
+        if (datosModal.conPracticas) {
+            columnasDetalle.push('Prácticas');
+        }
+        return {
+            titulo: datosModal.titulo || 'Órdenes',
+            nombre: 'ordenes-detalle',
+            columnas: columnasDetalle,
+            filas: detalle
+        };
+    }
+
+    function xml(valor) {
+        return String(valor)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function exportarExcel(cual) {
+        var cuadro = cuadroExportable(cual);
+        if (!cuadro.filas.length) {
+            aviso('No hay filas para exportar.');
+            return;
+        }
+        var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table><tr>';
+        var i;
+        var j;
+        for (i = 0; i < cuadro.columnas.length; i++) {
+            html += '<th>' + xml(cuadro.columnas[i]) + '</th>';
+        }
+        html += '</tr>';
+        for (i = 0; i < cuadro.filas.length; i++) {
+            html += '<tr>';
+            for (j = 0; j < cuadro.filas[i].length; j++) {
+                html += '<td>' + xml(cuadro.filas[i][j]) + '</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</table></body></html>';
+        var blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+        var enlace = document.createElement('a');
+        enlace.href = URL.createObjectURL(blob);
+        enlace.download = cuadro.nombre + '.xls';
+        document.body.appendChild(enlace);
+        enlace.click();
+        document.body.removeChild(enlace);
+    }
+
+    function abrirPdf(cual) {
+        var cuadro = cuadroExportable(cual);
+        if (!cuadro.filas.length) {
+            aviso('No hay filas para imprimir.');
+            return;
+        }
+        if (!window.pdfMake || !window.pdfMake.createPdf) {
+            aviso('El generador de PDF todavía no está listo. Recargue la página.');
+            return;
+        }
+        var cuerpo = [];
+        var encabezado = [];
+        var i;
+        var j;
+        for (i = 0; i < cuadro.columnas.length; i++) {
+            encabezado.push({ text: cuadro.columnas[i], bold: true, color: '#ffffff', fillColor: '#0d47a1' });
+        }
+        cuerpo.push(encabezado);
+        for (i = 0; i < cuadro.filas.length; i++) {
+            var linea = [];
+            for (j = 0; j < cuadro.filas[i].length; j++) {
+                linea.push(String(cuadro.filas[i][j]));
+            }
+            cuerpo.push(linea);
+        }
+        var anchos = [];
+        for (i = 0; i < cuadro.columnas.length; i++) {
+            anchos.push('*');
+        }
+        pdfMake.createPdf({
+            pageSize: 'A4',
+            pageOrientation: cuadro.columnas.length > 5 ? 'landscape' : 'portrait',
+            pageMargins: [24, 28, 24, 28],
+            content: [
+                { text: cuadro.titulo, fontSize: 14, bold: true, color: '#0d47a1', margin: [0, 0, 0, 4] },
+                { text: 'COMEDICA · ' + rangoTexto(), fontSize: 9, color: '#64748b', margin: [0, 0, 0, 10] },
+                { table: { headerRows: 1, widths: anchos, body: cuerpo }, fontSize: 8 }
+            ]
+        }).open();
+    }
+
+    document.addEventListener('click', function (e) {
+        var nodo = e.target;
+        var excel = false;
+        var pdf = false;
+        while (nodo && nodo !== document) {
+            if (nodo.classList && nodo.classList.contains('js-excel')) {
+                excel = true;
+                break;
+            }
+            if (nodo.classList && nodo.classList.contains('js-pdf')) {
+                pdf = true;
+                break;
+            }
+            nodo = nodo.parentNode;
+        }
+        if (!nodo || nodo === document) {
+            return;
+        }
+        var cual = nodo.getAttribute('data-cual');
+        if (excel) {
+            exportarExcel(cual);
+        }
+        if (pdf) {
+            abrirPdf(cual);
+        }
+    });
+
     document.getElementById('formSectores').addEventListener('submit', function (e) {
         e.preventDefault();
         consultar();
@@ -357,11 +686,18 @@ $sectores = array(
         document.getElementById('cuerpoCargadas').addEventListener('click', abrirDesdeBoton);
         document.getElementById('cuerpoEstados').addEventListener('click', abrirDesdeBoton);
         document.getElementById('cerrarModalOrdenes').addEventListener('click', cerrarModal);
+        document.getElementById('cerrarModalPracticas').addEventListener('click', cerrarPracticas);
         modal.addEventListener('click', function (e) {
             if (e.target === modal) {
                 cerrarModal();
             }
         });
+        modalPracticas.addEventListener('click', function (e) {
+            if (e.target === modalPracticas) {
+                cerrarPracticas();
+            }
+        });
+        document.getElementById('cuerpoModal').addEventListener('click', abrirPracticasDesdeBoton);
     }
 
     function abrirDesdeBoton(e) {
@@ -396,12 +732,51 @@ $sectores = array(
             }
             if (modo === 'estado' && estado === 'AUTORIZADA') {
                 titulo = 'Autorizadas del ' + fechaCorta(dia);
-                subtitulo = (data.total || 0) + ' filas. Cada orden autorizada tiene un detalle más, que vemos en el paso siguiente.';
+                if (origen) {
+                    titulo = origen.charAt(0).toUpperCase() + origen.slice(1) + ' autorizadas del ' + fechaCorta(dia);
+                }
+                subtitulo = (data.total || 0) + ' órdenes. La cantidad de prácticas abre el detalle de cada una.';
             }
             if (modo === 'estado' && estado === 'RECHAZADA') {
                 titulo = 'Rechazadas del ' + fechaCorta(dia);
             }
-            abrirModal(titulo, subtitulo, data.filas || []);
+            if (modo === 'estado' && estado === 'AMBAS') {
+                titulo = 'Autorizadas y rechazadas del ' + fechaCorta(dia);
+                subtitulo = (data.total || 0) + ' órdenes. La cantidad de prácticas abre el detalle de cada una.';
+            }
+            abrirModal(titulo, subtitulo, data.filas || [], modo === 'estado');
+        }).catch(function () {
+            aviso('No se pudo abrir el detalle.');
+        });
+    }
+
+    function abrirPracticasDesdeBoton(e) {
+        var nodo = e.target;
+        while (nodo && nodo !== document) {
+            if (nodo.classList && nodo.classList.contains('js-practicas')) {
+                break;
+            }
+            nodo = nodo.parentNode;
+        }
+        if (!nodo || nodo === document) {
+            return;
+        }
+        var origen = nodo.getAttribute('data-origen') || '';
+        var nro = nodo.getAttribute('data-nro') || '';
+        var paciente = nodo.getAttribute('data-paciente') || '';
+        post('index.php?c=sectores&a=ajaxExplosionPracticas', {
+            origen: origen,
+            conroauto: nro
+        }).then(function (data) {
+            if (!data || data.status !== 'success') {
+                aviso((data && data.message) ? data.message : 'No se pudieron leer las prácticas.');
+                return;
+            }
+            abrirPracticas(
+                'Prácticas de la autorización ' + nro,
+                paciente + ' · ' + (data.total || 0) + ((data.total || 0) === 1 ? ' práctica' : ' prácticas'),
+                data.filas || []
+            );
         }).catch(function () {
             aviso('No se pudo abrir el detalle.');
         });
