@@ -38,7 +38,9 @@ $esAjax = ($accionPedida === 'ajaxlogin'
     || $accionPedida === 'ajaxresumenordenes'
     || $accionPedida === 'ajaxexplosionordenes'
     || $accionPedida === 'ajaxexplosionpracticas'
-    || $accionPedida === 'ajaxanalisiscuadro');
+    || $accionPedida === 'ajaxanalisiscuadro'
+    || $accionPedida === 'ajaxresumenfacturacion'
+    || $accionPedida === 'ajaxdetallefacturacion');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -151,6 +153,8 @@ $mapa = array(
             'ajaxExplosionOrdenes' => true,
             'ajaxExplosionPracticas' => true,
             'ajaxAnalisisCuadro' => true,
+            'ajaxResumenFacturacion' => true,
+            'ajaxDetalleFacturacion' => true,
         ),
         'publico'  => array(),
         'default'  => 'ordenes',

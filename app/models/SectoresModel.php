@@ -316,6 +316,163 @@ class SectoresModel
         );
     }
 
+    public function rangoFacturacion()
+    {
+        $sql = 'SELECT MAX(COFECHACAR) AS maximo FROM vfpmedicos.detconsu WHERE ' . $this->condicionDataEntry();
+        $stmt = $this->db->query($sql);
+        $fila = $stmt->fetch();
+        $maximo = ($fila && !empty($fila['maximo'])) ? substr((string) $fila['maximo'], 0, 10) : '';
+        if ($maximo === '') {
+            $maximo = date('Y-m-d');
+        }
+
+        return array(
+            'desde' => date('Y-m-d', strtotime($maximo . ' -13 days')),
+            'hasta' => $maximo,
+        );
+    }
+
+    public function resumenFacturacion($desde, $hastaExclusivo)
+    {
+        $sql = "SELECT DATE(COFECHACAR) AS dia,
+                       TRIM(COUSUARIO) AS usuario,
+                       COUNT(*) AS registros
+                  FROM vfpmedicos.detconsu
+                 WHERE COFECHACAR >= :desde AND COFECHACAR < :hasta
+                   AND " . $this->condicionDataEntry() . "
+                 GROUP BY DATE(COFECHACAR), TRIM(COUSUARIO)
+                 ORDER BY dia, usuario";
+        $filas = $this->consultar($sql, array(
+            ':desde' => $desde . ' 00:00:00',
+            ':hasta' => $hastaExclusivo . ' 00:00:00',
+        ));
+
+        $porUsuario = array();
+        $porDia = array();
+        $columnas = array();
+        foreach ($filas as $fila) {
+            $dia = substr((string) $fila['dia'], 0, 10);
+            $usuario = (string) $fila['usuario'];
+            $cantidad = (int) $fila['registros'];
+            if (!isset($porUsuario[$usuario])) {
+                $porUsuario[$usuario] = array('usuario' => $usuario, 'registros' => 0, 'dias' => 0);
+            }
+            $porUsuario[$usuario]['registros'] += $cantidad;
+            $porUsuario[$usuario]['dias'] += 1;
+            if (!isset($porDia[$dia])) {
+                $porDia[$dia] = array('dia' => $dia, 'total' => 0, 'cargas' => array());
+            }
+            $porDia[$dia]['cargas'][$usuario] = $cantidad;
+            $porDia[$dia]['total'] += $cantidad;
+            $columnas[$usuario] = true;
+        }
+
+        $usuarios = array();
+        foreach ($porUsuario as $usuario) {
+            $ritmo = $this->ritmoJornada($usuario['registros'], $usuario['dias']);
+            $usuarios[] = array(
+                'usuario'   => $usuario['usuario'],
+                'registros' => $usuario['registros'],
+                'dias'      => $usuario['dias'],
+                'promedio'  => $ritmo['promedio'],
+                'por_hora'  => $ritmo['por_hora'],
+                'minutos'   => $ritmo['minutos'],
+            );
+        }
+        usort($usuarios, array($this, 'compararRegistros'));
+
+        $nombres = array_keys($columnas);
+        sort($nombres);
+        ksort($porDia);
+
+        return array(
+            'jornada' => array(
+                'horas'        => 8,
+                'descanso_min' => 60,
+                'neta_horas'   => 7,
+                'neta_min'     => 420,
+            ),
+            'usuarios' => $usuarios,
+            'columnas' => $nombres,
+            'dias'     => array_values($porDia),
+        );
+    }
+
+    public function detalleFacturacion($desde, $hastaExclusivo, $usuario, $dia)
+    {
+        if ($dia !== '') {
+            $desde = $dia;
+            $hastaExclusivo = date('Y-m-d', strtotime($dia . ' +1 day'));
+        }
+
+        $where = ' WHERE COFECHACAR >= :desde AND COFECHACAR < :hasta
+                     AND ' . $this->condicionDataEntry();
+        $params = array(
+            ':desde' => $desde . ' 00:00:00',
+            ':hasta' => $hastaExclusivo . ' 00:00:00',
+        );
+        if ($usuario !== '') {
+            $where .= ' AND TRIM(COUSUARIO) = :usuario';
+            $params[':usuario'] = $usuario;
+        }
+
+        $conteo = $this->consultar('SELECT COUNT(*) AS n FROM vfpmedicos.detconsu' . $where, $params);
+        $total = ($conteo && isset($conteo[0]['n'])) ? (int) $conteo[0]['n'] : 0;
+
+        $sql = "SELECT DATE_FORMAT(COFECHACAR, '%d/%m/%Y') AS fecha,
+                       TRIM(COHORACAR) AS hora,
+                       TRIM(COUSUARIO) AS usuario,
+                       TRIM(COOBRASOC) AS obra,
+                       TRIM(COPRESTADO) AS prestador,
+                       TRIM(CONOMPREST) AS nombre_prestador,
+                       TRIM(COAFILIADO) AS afiliado,
+                       TRIM(CONOMPAC) AS paciente,
+                       TRIM(COCODPREST) AS codigo,
+                       TRIM(CONOMBPRES) AS practica,
+                       COIMPORTE AS importe,
+                       TRIM(COPERIODO) AS periodo
+                  FROM vfpmedicos.detconsu"
+             . $where
+             . ' ORDER BY COFECHACAR, COHORACAR, CONOMPAC
+                 LIMIT 2000';
+        $filas = $this->consultar($sql, $params);
+        foreach ($filas as $i => $fila) {
+            $filas[$i]['importe'] = number_format((float) $fila['importe'], 2, ',', '.');
+        }
+
+        return array(
+            'filas'   => $filas,
+            'total'   => $total,
+            'recorte' => $total > count($filas),
+        );
+    }
+
+    private function condicionDataEntry()
+    {
+        return "TRIM(COUSUARIO) <> '' AND UPPER(TRIM(COUSUARIO)) <> 'NOE'";
+    }
+
+    private function ritmoJornada($registros, $dias)
+    {
+        $promedio = $dias > 0 ? $registros / $dias : 0;
+        $porHora = $promedio / 7;
+        $minutos = $registros > 0 ? ($dias * 420) / $registros : 0;
+
+        return array(
+            'promedio' => round($promedio, 1),
+            'por_hora' => round($porHora, 1),
+            'minutos'  => round($minutos, 1),
+        );
+    }
+
+    private function compararRegistros($a, $b)
+    {
+        if ($a['registros'] === $b['registros']) {
+            return strcmp($a['usuario'], $b['usuario']);
+        }
+        return ($a['registros'] > $b['registros']) ? -1 : 1;
+    }
+
     private function consultar($sql, $params)
     {
         $stmt = $this->db->prepare($sql);

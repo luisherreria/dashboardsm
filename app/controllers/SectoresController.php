@@ -155,11 +155,76 @@ class SectoresController extends Controller
         ));
     }
 
+    public function ajaxResumenFacturacion()
+    {
+        $rango = $this->leerRango();
+        try {
+            $modelo = new SectoresModel();
+            $resumen = $modelo->resumenFacturacion($rango['desde'], $rango['hasta_exclusivo']);
+        } catch (Exception $e) {
+            error_log('SectoresController::ajaxResumenFacturacion — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudo contar la carga de facturación.',
+            ));
+        }
+
+        $resumen['status'] = 'success';
+        $resumen['message'] = '';
+        $resumen['desde'] = $rango['desde'];
+        $resumen['hasta'] = $rango['hasta'];
+        $this->json($resumen);
+    }
+
+    public function ajaxDetalleFacturacion()
+    {
+        $rango = $this->leerRango();
+        $usuario = isset($_POST['usuario']) ? strtoupper(trim((string) $_POST['usuario'])) : '';
+        $dia = isset($_POST['dia']) ? trim((string) $_POST['dia']) : '';
+        if ($usuario !== '' && !preg_match('/^[A-Z0-9]{1,10}$/', $usuario)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'El usuario de data entry no es válido.',
+            ));
+        }
+        if ($dia !== '' && !$this->fechaValida($dia)) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'El día de la fila no es válido.',
+            ));
+        }
+        if ($usuario === '' && $dia === '') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'Elija un usuario o un día.',
+            ));
+        }
+
+        try {
+            $modelo = new SectoresModel();
+            $detalle = $modelo->detalleFacturacion($rango['desde'], $rango['hasta_exclusivo'], $usuario, $dia);
+        } catch (Exception $e) {
+            error_log('SectoresController::ajaxDetalleFacturacion — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudo abrir el detalle de la carga.',
+            ));
+        }
+
+        $this->json(array(
+            'status'  => 'success',
+            'message' => '',
+            'filas'   => $detalle['filas'],
+            'total'   => $detalle['total'],
+            'recorte' => $detalle['recorte'],
+        ));
+    }
+
     public function ajaxAnalisisCuadro()
     {
         $rango = $this->leerRango();
         $cuadro = isset($_POST['cuadro']) ? trim((string) $_POST['cuadro']) : '';
-        if ($cuadro !== 'cargadas' && $cuadro !== 'estados') {
+        if ($cuadro !== 'cargadas' && $cuadro !== 'estados' && $cuadro !== 'facturacion') {
             $this->json(array(
                 'status'  => 'error',
                 'message' => 'El cuadro a analizar no es válido.',
@@ -168,7 +233,17 @@ class SectoresController extends Controller
 
         try {
             $modelo = new SectoresModel();
-            if ($cuadro === 'cargadas') {
+            if ($cuadro === 'facturacion') {
+                $filas = $modelo->resumenFacturacion($rango['desde'], $rango['hasta_exclusivo']);
+                $titulo = 'Carga de facturación por data entry';
+                $sistema = 'Sos un analista de productividad de data entry de una obra social. '
+                    . 'Los registros salen de vfpmedicos.detconsu, filtrados por COFECHACAR y agrupados por COUSUARIO. '
+                    . 'COUSUARIO NOE no está: es auditora y sus filas son ajustes. No la cuentes ni la menciones como carga. '
+                    . 'La jornada de cálculo es 8 horas con 60 minutos de descanso: 7 horas netas y 420 minutos por día en que la persona cargó. '
+                    . 'por_hora es el promedio diario dividido 7. minutos es 420 dividido el promedio diario. '
+                    . 'Escribí en español, directo, sin saludos, en HTML simple con <p> y <b>. '
+                    . 'Usá solo estos números. No inventes causas ni horarios reales.';
+            } elseif ($cuadro === 'cargadas') {
                 $filas = $modelo->resumenCargadas($rango['desde'], $rango['hasta_exclusivo']);
                 $titulo = 'Órdenes cargadas por día';
                 $sistema = 'Sos un analista de órdenes de una obra social. El cuadro cuenta filas cargadas por COFECHA. '
@@ -234,7 +309,7 @@ class SectoresController extends Controller
             ),
             'facturacion' => array(
                 'titulo' => 'Carga de facturación',
-                'texto'  => 'Data entry de facturación. El conteo se conecta en el paso siguiente.',
+                'texto'  => 'Registros cargados por data entry, por usuario y por día.',
             ),
             'auditoria_facturas' => array(
                 'titulo' => 'Auditoría de facturas',
@@ -250,7 +325,11 @@ class SectoresController extends Controller
         $errorCarga = '';
         try {
             $modelo = new SectoresModel();
-            $rango = $modelo->rangoSugerido();
+            if ($reporte === 'facturacion') {
+                $rango = $modelo->rangoFacturacion();
+            } else {
+                $rango = $modelo->rangoSugerido();
+            }
         } catch (Exception $e) {
             error_log('SectoresController::pantalla — ' . $e->getMessage());
             $errorCarga = 'No se pudo preparar el rango de fechas.';
