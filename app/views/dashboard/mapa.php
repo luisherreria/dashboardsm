@@ -48,9 +48,9 @@ if ($categoriasJson === false) {
         <h1 class="text-lg font-bold text-[#0d47a1]">
             <i class="fa-solid fa-map-location-dot mr-2"></i>Mapa de cobertura
         </h1>
-        <p class="text-sm text-slate-500">Afiliados activos de unicos (FBAJA vacía) y prestadores de la obra elegida.</p>
+        <p class="text-sm text-slate-500">Abre vacío. La obra social muestra los afiliados. Las sucursales entran solo si las marca.</p>
     </div>
-    <p id="estadoMapa" class="text-xs font-medium text-slate-500">Seleccione una obra social para cargar el mapa.</p>
+    <p id="estadoMapa" class="text-xs font-medium text-slate-500">Mapa vacío. Elija una obra social para ver los afiliados.</p>
 </div>
 
 <?php if ($mensajeCarga !== ''): ?>
@@ -89,7 +89,7 @@ if ($categoriasJson === false) {
                 </span>
             </div>
             <label class="mb-2 flex items-center gap-2 text-sm font-medium text-slate-800">
-                <input id="verPrestadores" type="checkbox" class="h-4 w-4 accent-[#1565c0]" checked>
+                <input id="verPrestadores" type="checkbox" class="h-4 w-4 accent-[#1565c0]">
                 Ver sucursales
             </label>
             <div class="mb-2 flex gap-2">
@@ -109,7 +109,7 @@ if ($categoriasJson === false) {
                 </label>
                 <?php endforeach; ?>
             </div>
-            <p id="resumenPrestadores" class="mt-2 text-xs text-slate-500">Se cargan al elegir la obra social.</p>
+            <p id="resumenPrestadores" class="mt-2 text-xs text-slate-500">Sin cargar. Marque Ver sucursales después de elegir la obra.</p>
             <div id="listaProvincias" class="mt-2 max-h-36 space-y-0.5 overflow-y-auto"></div>
             <button type="button" id="btnReintentarPrestadores" class="mt-3 hidden rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-[#1565c0] hover:bg-blue-50">Reintentar prestadores</button>
         </section>
@@ -217,6 +217,7 @@ if ($categoriasJson === false) {
     var pedidoAfiliados = 0;
     var pedidoPrestadores = 0;
     var afiliadosCargados = false;
+    var prestadoresListos = false;
 
     function esc(texto) {
         return String(texto == null ? '' : texto)
@@ -361,6 +362,19 @@ if ($categoriasJson === false) {
             }
         }
         return true;
+    }
+
+    function limpiarPrestadores() {
+        var codigo;
+        for (codigo in gruposPrestadores) {
+            if (gruposPrestadores.hasOwnProperty(codigo)) {
+                mapa.removeLayer(gruposPrestadores[codigo]);
+            }
+        }
+        gruposPrestadores = {};
+        marcasPrestadores = [];
+        prestadoresListos = false;
+        pintarProvincias([]);
     }
 
     function aplicarCapasPrestadores() {
@@ -579,6 +593,7 @@ if ($categoriasJson === false) {
                 pintarCategorias(data.categorias || []);
                 pintarProvincias(data.provincias || []);
                 dibujarPrestadores(data.puntos || []);
+                prestadoresListos = true;
                 resumen.textContent = entero(data.ubicados) + ' de ' + entero(data.total) + ' sucursales en el mapa'
                     + (data.aproximados ? (' · ' + entero(data.aproximados) + ' por localidad') : '')
                     + (data.pendientes ? (' · faltan ' + entero(data.pendientes)) : '');
@@ -849,11 +864,54 @@ if ($categoriasJson === false) {
     });
 
     document.getElementById('filtroObra').addEventListener('change', function () {
-        cargarAfiliados();
-        cargarPrestadores();
+        pedidoPrestadores++;
+        limpiarPrestadores();
+        var resumenP = document.getElementById('resumenPrestadores');
+        var obra = document.getElementById('filtroObra').value;
+        if (document.getElementById('verPrestadores').checked && obra) {
+            cargarPrestadores();
+        } else if (resumenP) {
+            resumenP.textContent = obra
+                ? 'Marque Ver sucursales para cargarlas.'
+                : 'Sin cargar. Marque Ver sucursales después de elegir la obra.';
+        }
+        if (document.getElementById('verAfiliados').checked) {
+            cargarAfiliados();
+            return;
+        }
+        grupoAfiliados.clearLayers();
+        marcasAfiliados = [];
+        afiliadosCargados = false;
+        aplicarCapaAfiliados();
+        document.getElementById('resumenAfiliados').textContent = obra
+            ? 'Marque Ver afiliados para cargarlos.'
+            : 'Sin obra seleccionada. Los activos son los de unicos con FBAJA vacía.';
+        estado(obra ? 'Obra elegida. Marque qué quiere ver en el mapa.' : 'Mapa vacío. Elija una obra social para ver los afiliados.');
     });
-    document.getElementById('verAfiliados').addEventListener('change', aplicarCapaAfiliados);
-    document.getElementById('verPrestadores').addEventListener('change', aplicarCapasPrestadores);
+    document.getElementById('verAfiliados').addEventListener('change', function () {
+        if (this.checked && document.getElementById('filtroObra').value && !afiliadosCargados) {
+            cargarAfiliados();
+            return;
+        }
+        aplicarCapaAfiliados();
+    });
+    document.getElementById('verPrestadores').addEventListener('change', function () {
+        var obra = document.getElementById('filtroObra').value;
+        if (this.checked) {
+            if (!obra) {
+                this.checked = false;
+                estado('Primero elija una obra social.');
+                return;
+            }
+            if (!prestadoresListos) {
+                cargarPrestadores();
+            } else {
+                aplicarCapasPrestadores();
+            }
+            return;
+        }
+        aplicarCapasPrestadores();
+    });
     document.getElementById('btnCatsTodas').addEventListener('click', function () { marcarCategorias(true); });
     document.getElementById('btnCatsNinguna').addEventListener('click', function () { marcarCategorias(false); });
     document.getElementById('btnReintentarAfiliados').addEventListener('click', cargarAfiliados);
