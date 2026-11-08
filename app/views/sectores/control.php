@@ -118,6 +118,21 @@ $sectores = array(
                 <tbody id="cuerpoCargadas" class="divide-y divide-slate-100"></tbody>
             </table>
         </div>
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="flex items-center text-xs font-bold uppercase text-slate-500">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                    Análisis del cuadro
+                </div>
+                <button type="button" class="js-analizar inline-flex items-center gap-1 rounded-lg bg-[#1565c0] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#0d47a1]" data-cuadro="cargadas">
+                    <i class="fa-solid fa-brain"></i> Análisis IA
+                </button>
+            </div>
+            <div id="analisisCargadas" class="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium leading-relaxed text-slate-800">
+                <p class="text-slate-400">El análisis se calcula al consultar.</p>
+            </div>
+            <div id="iaCargadas" class="mt-2 hidden rounded-lg border border-blue-100 bg-white p-3 text-xs leading-relaxed text-slate-800"></div>
+        </div>
     </section>
 
     <section class="rounded-2xl bg-white p-4 shadow-sm">
@@ -150,6 +165,21 @@ $sectores = array(
                 </thead>
                 <tbody id="cuerpoEstados" class="divide-y divide-slate-100"></tbody>
             </table>
+        </div>
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="flex items-center text-xs font-bold uppercase text-slate-500">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-blue-600"></i>
+                    Análisis del cuadro
+                </div>
+                <button type="button" class="js-analizar inline-flex items-center gap-1 rounded-lg bg-[#1565c0] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#0d47a1]" data-cuadro="estados">
+                    <i class="fa-solid fa-brain"></i> Análisis IA
+                </button>
+            </div>
+            <div id="analisisEstados" class="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs font-medium leading-relaxed text-slate-800">
+                <p class="text-slate-400">El análisis se calcula al consultar.</p>
+            </div>
+            <div id="iaEstados" class="mt-2 hidden rounded-lg border border-blue-100 bg-white p-3 text-xs leading-relaxed text-slate-800"></div>
         </div>
     </section>
 </div>
@@ -248,6 +278,7 @@ $sectores = array(
     var datosModal = { titulo: '', subtitulo: '', filas: [], conPracticas: false };
     var datosPracticas = { titulo: '', subtitulo: '', filas: [] };
     var modalPracticas = document.getElementById('modalPracticas');
+    var analisisTicket = { cargadas: 0, estados: 0 };
 
     function aviso(texto) {
         Swal.fire({
@@ -464,6 +495,10 @@ $sectores = array(
             }
             pintarCargadas(data.cargadas || []);
             pintarEstados(data.estados || []);
+            pintarAnalisis('cargadas', datosCargadas);
+            pintarAnalisis('estados', datosEstados);
+            pedirAnalisis('cargadas');
+            pedirAnalisis('estados');
         }).catch(function () {
             aviso('No se pudo consultar el rango.');
         });
@@ -471,6 +506,162 @@ $sectores = array(
 
     function rangoTexto() {
         return fechaCorta(document.getElementById('filtroDesde').value) + ' al ' + fechaCorta(document.getElementById('filtroHasta').value);
+    }
+
+    function sumarCampo(filas, campo) {
+        var total = 0;
+        var i;
+        for (i = 0; i < filas.length; i++) {
+            total += Number(filas[i][campo]) || 0;
+        }
+        return total;
+    }
+
+    function extremo(filas, valorDe) {
+        var mejor = null;
+        var peor = null;
+        var i;
+        var n;
+        for (i = 0; i < filas.length; i++) {
+            n = valorDe(filas[i]);
+            if (mejor === null || n > mejor.valor) {
+                mejor = { fila: filas[i], valor: n };
+            }
+            if (peor === null || n < peor.valor) {
+                peor = { fila: filas[i], valor: n };
+            }
+        }
+        return { alto: mejor, bajo: peor };
+    }
+
+    function nombreDia(iso) {
+        var partes = String(iso || '').split('-');
+        if (partes.length < 3) {
+            return '';
+        }
+        var fecha = new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]));
+        return ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][fecha.getDay()];
+    }
+
+    function fraseDia(fila) {
+        return 'el ' + nombreDia(fila.dia) + ' ' + fechaCorta(fila.dia);
+    }
+
+    function filasConMaximo(filas, valorDe) {
+        var maximo = null;
+        var elegidas = [];
+        var i;
+        var n;
+        for (i = 0; i < filas.length; i++) {
+            n = valorDe(filas[i]);
+            if (maximo === null || n > maximo) {
+                maximo = n;
+                elegidas = [filas[i]];
+            } else if (n === maximo) {
+                elegidas.push(filas[i]);
+            }
+        }
+        return elegidas;
+    }
+
+    function fraseVariosDias(filas) {
+        var textos = [];
+        var i;
+        for (i = 0; i < filas.length; i++) {
+            textos.push(fraseDia(filas[i]));
+        }
+        if (textos.length <= 1) {
+            return textos[0] || '';
+        }
+        return textos.slice(0, textos.length - 1).join(', ') + ' y ' + textos[textos.length - 1];
+    }
+
+    function textoAnalisis(cuadro, filas) {
+        if (!filas || !filas.length) {
+            return '<p>No hay datos en ese rango.</p>';
+        }
+        var rango = rangoTexto();
+        if (cuadro === 'cargadas') {
+            var marcas = extremo(filas, function (fila) { return Number(fila.total) || 0; });
+            var meds = extremo(filas, function (fila) { return Number(fila.medicamentos) || 0; });
+            var alto = marcas.alto.fila;
+            var html = '<p>Del ' + rango + ' se cargaron <b>' + entero(sumarCampo(filas, 'total')) + '</b> órdenes: '
+                + entero(sumarCampo(filas, 'ambulatorio')) + ' ambulatorias, '
+                + entero(sumarCampo(filas, 'sanatorial')) + ' sanatoriales y '
+                + entero(sumarCampo(filas, 'medicamentos')) + ' de medicamentos.</p>'
+                + '<p>El día más alto fue ' + fraseDia(alto) + ', con <b>' + entero(alto.total) + '</b>: '
+                + entero(alto.ambulatorio) + ' ambulatorias, ' + entero(alto.sanatorial) + ' sanatoriales y '
+                + entero(alto.medicamentos) + ' medicamentos.</p>';
+            if (filas.length > 1 && marcas.bajo.fila.dia !== alto.dia) {
+                html += '<p>El día más bajo fue ' + fraseDia(marcas.bajo.fila) + ', con <b>' + entero(marcas.bajo.valor) + '</b>.</p>';
+            }
+            if (meds.alto.valor > 0 && meds.alto.fila.dia !== alto.dia) {
+                html += '<p>El máximo de medicamentos fue ' + fraseDia(meds.alto.fila) + ', con <b>' + entero(meds.alto.valor) + '</b>.</p>';
+            }
+            return html;
+        }
+        var diasAutorizados = filasConMaximo(filas, function (fila) {
+            return (Number(fila.ambulatorio) || 0) + (Number(fila.sanatorial) || 0);
+        });
+        var practicas = extremo(filas, function (fila) { return Number(fila.practicas) || 0; });
+        var sinNumero = sumarCampo(filas, 'sin_numero');
+        var texto = '<p>Del ' + rango + ' se autorizaron <b>' + entero(sumarCampo(filas, 'ambulatorio') + sumarCampo(filas, 'sanatorial')) + '</b> órdenes: '
+            + entero(sumarCampo(filas, 'ambulatorio')) + ' ambulatorias y '
+            + entero(sumarCampo(filas, 'sanatorial')) + ' sanatoriales. Las prácticas suman <b>' + entero(sumarCampo(filas, 'practicas')) + '</b>. '
+            + 'Las rechazadas, por fecha de la orden, suman <b>' + entero(sumarCampo(filas, 'rechazadas')) + '</b>. '
+            + 'El total del cuadro es <b>' + entero(sumarCampo(filas, 'total')) + '</b>.</p>';
+        if (diasAutorizados.length && ((Number(diasAutorizados[0].ambulatorio) || 0) + (Number(diasAutorizados[0].sanatorial) || 0)) > 0) {
+            var cantidadAut = (Number(diasAutorizados[0].ambulatorio) || 0) + (Number(diasAutorizados[0].sanatorial) || 0);
+            texto += '<p>' + (diasAutorizados.length > 1 ? 'Los días con más órdenes autorizadas fueron ' : 'El día con más órdenes autorizadas fue ')
+                + fraseVariosDias(diasAutorizados) + ', con <b>' + entero(cantidadAut) + '</b>';
+            if (diasAutorizados.length === 1) {
+                texto += ' (' + entero(diasAutorizados[0].ambulatorio) + ' ambulatorias y ' + entero(diasAutorizados[0].sanatorial) + ' sanatoriales)';
+            }
+            texto += '.</p>';
+        }
+        if (practicas.alto.valor > 0) {
+            var mismoDia = diasAutorizados.length === 1 && practicas.alto.fila.dia === diasAutorizados[0].dia;
+            if (!mismoDia) {
+                texto += '<p>El día con más prácticas fue ' + fraseDia(practicas.alto.fila) + ', con <b>' + entero(practicas.alto.valor) + '</b>.</p>';
+            }
+        }
+        if (sinNumero > 0) {
+            texto += '<p><b>' + entero(sinNumero) + '</b> autorizadas no tienen número y están contadas en ambulatorio o sanatorial.</p>';
+        }
+        return texto;
+    }
+
+    function pintarAnalisis(cuadro, filas) {
+        var caja = document.getElementById(cuadro === 'cargadas' ? 'analisisCargadas' : 'analisisEstados');
+        if (!caja) {
+            return;
+        }
+        caja.innerHTML = textoAnalisis(cuadro, filas || []);
+    }
+
+    function pedirAnalisis(cuadro) {
+        var caja = document.getElementById(cuadro === 'cargadas' ? 'iaCargadas' : 'iaEstados');
+        if (!caja) {
+            return;
+        }
+        var ticket = ++analisisTicket[cuadro];
+        caja.classList.remove('hidden');
+        caja.innerHTML = '<p class="text-slate-400">La IA está leyendo este cuadro.</p>';
+        post('index.php?c=sectores&a=ajaxAnalisisCuadro', { cuadro: cuadro }).then(function (data) {
+            if (ticket !== analisisTicket[cuadro]) {
+                return;
+            }
+            if (!data || data.status !== 'success') {
+                caja.innerHTML = '<p class="text-red-700">' + textoCelda((data && data.message) ? data.message : 'La IA no respondió.') + '</p>';
+                return;
+            }
+            caja.innerHTML = data.html || '';
+        }).catch(function () {
+            if (ticket !== analisisTicket[cuadro]) {
+                return;
+            }
+            caja.innerHTML = '<p class="text-red-700">No se pudo consultar el análisis IA.</p>';
+        });
     }
 
     function plano(valor) {
@@ -695,6 +886,16 @@ $sectores = array(
             }
         });
         document.getElementById('cuerpoModal').addEventListener('click', abrirPracticasDesdeBoton);
+        document.addEventListener('click', function (e) {
+            var nodo = e.target;
+            while (nodo && nodo !== document) {
+                if (nodo.classList && nodo.classList.contains('js-analizar')) {
+                    pedirAnalisis(nodo.getAttribute('data-cuadro'));
+                    return;
+                }
+                nodo = nodo.parentNode;
+            }
+        });
     }
 
     function abrirDesdeBoton(e) {

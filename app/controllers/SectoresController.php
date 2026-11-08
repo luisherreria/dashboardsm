@@ -155,6 +155,74 @@ class SectoresController extends Controller
         ));
     }
 
+    public function ajaxAnalisisCuadro()
+    {
+        $rango = $this->leerRango();
+        $cuadro = isset($_POST['cuadro']) ? trim((string) $_POST['cuadro']) : '';
+        if ($cuadro !== 'cargadas' && $cuadro !== 'estados') {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'El cuadro a analizar no es válido.',
+            ));
+        }
+
+        try {
+            $modelo = new SectoresModel();
+            if ($cuadro === 'cargadas') {
+                $filas = $modelo->resumenCargadas($rango['desde'], $rango['hasta_exclusivo']);
+                $titulo = 'Órdenes cargadas por día';
+                $sistema = 'Sos un analista de órdenes de una obra social. El cuadro cuenta filas cargadas por COFECHA. '
+                    . 'Columnas: ambulatorio (cartilla.ordenes), sanatorial (cartilla.sanorden), medicamentos (cartilla.ordenes_medicamentos) y total. '
+                    . 'Escribí en español, directo, sin saludos, en HTML simple con <p> y <b>. '
+                    . 'Usá solo estos números. No hables de autorizaciones, rechazos ni prácticas. No inventes causas.';
+            } else {
+                $filas = $modelo->resumenEstados($rango['desde'], $rango['hasta_exclusivo']);
+                $titulo = 'Autorizadas y rechazadas por día';
+                $sistema = 'Sos un analista de órdenes de una obra social. Este cuadro no incluye medicamentos. '
+                    . 'AMB y SAN son órdenes con estado AUTORIZADA y fecha de autorización COFECAUTO, aunque CONROAUTO esté vacío: sin_numero cuenta esas. '
+                    . 'RECH son órdenes con estado RECHAZADA y fecha de carga COFECHA, ambulatorias y sanatoriales juntas. '
+                    . 'TOTPRAC son prácticas de detauto y sanautod ligadas a un número de autorización. '
+                    . 'TOTAL suma autorizadas y rechazadas. '
+                    . 'Escribí en español, directo, sin saludos, en HTML simple con <p> y <b>. '
+                    . 'Usá solo estos números. No los compares con las órdenes cargadas. No inventes causas.';
+            }
+        } catch (Exception $e) {
+            error_log('SectoresController::ajaxAnalisisCuadro — ' . $e->getMessage());
+            $this->json(array(
+                'status'  => 'error',
+                'message' => 'No se pudo leer el cuadro para el análisis.',
+            ));
+        }
+
+        require_once __DIR__ . '/../services/AiService.php';
+        $servicio = new AiService();
+        $pedido = 'Analizá el cuadro "' . $titulo . '" del ' . $rango['desde'] . ' al ' . $rango['hasta'] . '. '
+            . 'Señalá el total del rango, el día más alto y, si se distingue, el día más bajo. Si hay empate, nombrá todos esos días. Máximo tres párrafos.';
+        $resultado = $servicio->enviarConsulta(
+            array(array('role' => 'user', 'text' => $pedido)),
+            array(
+                'cuadro' => $titulo,
+                'desde'  => $rango['desde'],
+                'hasta'  => $rango['hasta'],
+                'filas'  => $filas,
+            ),
+            null,
+            $sistema
+        );
+        if (empty($resultado['ok'])) {
+            $this->json(array(
+                'status'  => 'error',
+                'message' => isset($resultado['texto']) ? $resultado['texto'] : 'La IA no respondió.',
+            ));
+        }
+
+        $this->json(array(
+            'status'  => 'success',
+            'message' => '',
+            'html'    => $resultado['texto'],
+        ));
+    }
+
     private function pantalla($reporte)
     {
         $this->requerirLogin();

@@ -46,8 +46,8 @@ $esAdmin = ($rolSesion === 'admin');
             </div>
         </div>
 
-        <div class="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 text-base font-bold tracking-[0.12em] md:block">
-            COMEDICA
+        <div class="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 md:block">
+            <img src="public/img/comedica_bl.png" alt="COMEDICA" class="h-9 w-auto">
         </div>
 
         <button type="button" id="btnMenu"

@@ -6,7 +6,7 @@
 
 class AiService
 {
-    public function enviarConsulta($historialMensajes, $datosContexto = array(), $archivoAdjunto = null)
+    public function enviarConsulta($historialMensajes, $datosContexto = array(), $archivoAdjunto = null, $instruccionSistema = null)
     {
         if (!defined('GEMINI_API_KEY')) {
             require_once dirname(dirname(__DIR__)) . '/config/config.php';
@@ -34,12 +34,16 @@ class AiService
             $contextoJson = '{}';
         }
 
-        $sistema = 'Eres el Auditor Médico Senior y Gerente Financiero de la Obra Social. Analiza estos datos consolidados del corte actual: '
-            . $contextoJson
-            . '. Detecta desvíos poblacionales, riesgos por envejecimiento, impacto de discapacidad (CUD) y analiza cualquier documento externo adjunto. Sé ejecutivo, directo, sin saludos y responde en HTML simple (<b>, <ul>, <li>, <p>, <table>).';
-        $reglas = $this->leerReglasNegocio();
-        if ($reglas !== '') {
-            $sistema .= ' Respetá estas directivas de negocio en todas las obras sociales: ' . $reglas;
+        if (is_string($instruccionSistema) && trim($instruccionSistema) !== '') {
+            $sistema = trim($instruccionSistema) . ' Datos del cuadro: ' . $contextoJson;
+        } else {
+            $sistema = 'Eres el Auditor Médico Senior y Gerente Financiero de la Obra Social. Analiza estos datos consolidados del corte actual: '
+                . $contextoJson
+                . '. Detecta desvíos poblacionales, riesgos por envejecimiento, impacto de discapacidad (CUD) y analiza cualquier documento externo adjunto. Sé ejecutivo, directo, sin saludos y responde en HTML simple (<b>, <ul>, <li>, <p>, <table>).';
+            $reglas = $this->leerReglasNegocio();
+            if ($reglas !== '') {
+                $sistema .= ' Respetá estas directivas de negocio en todas las obras sociales: ' . $reglas;
+            }
         }
 
         $contents = array();

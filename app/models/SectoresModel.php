@@ -89,7 +89,9 @@ class SectoresModel
             if ($fuente['clave'] === 'medicamentos') {
                 continue;
             }
-            $sql = "SELECT DATE(COFECAUTO) AS dia, COUNT(*) AS autorizadas
+            $sql = "SELECT DATE(COFECAUTO) AS dia,
+                           COUNT(*) AS autorizadas,
+                           SUM(CASE WHEN CONROAUTO IS NULL OR TRIM(CONROAUTO) = '' THEN 1 ELSE 0 END) AS sin_numero
                       FROM " . $fuente['tabla'] . "
                      WHERE COFECAUTO >= :desde AND COFECAUTO < :hasta
                        AND UPPER(TRIM(COESTADO)) = 'AUTORIZADA'
@@ -103,6 +105,7 @@ class SectoresModel
                 $cantidad = (int) $fila['autorizadas'];
                 $mapa[$dia][$fuente['clave']] = $cantidad;
                 $mapa[$dia]['total'] += $cantidad;
+                $mapa[$dia]['sin_numero'] += (int) $fila['sin_numero'];
             }
 
             $sqlRechazo = "SELECT DATE(COFECHA) AS dia, COUNT(*) AS rechazadas
@@ -273,6 +276,7 @@ class SectoresModel
             'medicamentos' => 0,
             'rechazadas'   => 0,
             'practicas'    => 0,
+            'sin_numero'   => 0,
             'total'        => 0,
         );
     }

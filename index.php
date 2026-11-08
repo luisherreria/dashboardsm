@@ -37,7 +37,8 @@ $esAjax = ($accionPedida === 'ajaxlogin'
     || $accionPedida === 'ajaxgetmapaprestadores'
     || $accionPedida === 'ajaxresumenordenes'
     || $accionPedida === 'ajaxexplosionordenes'
-    || $accionPedida === 'ajaxexplosionpracticas');
+    || $accionPedida === 'ajaxexplosionpracticas'
+    || $accionPedida === 'ajaxanalisiscuadro');
 if ($esLocal && !$esAjax) {
     ini_set('display_errors', '1');
 }
@@ -149,6 +150,7 @@ $mapa = array(
             'ajaxResumenOrdenes' => true,
             'ajaxExplosionOrdenes' => true,
             'ajaxExplosionPracticas' => true,
+            'ajaxAnalisisCuadro' => true,
         ),
         'publico'  => array(),
         'default'  => 'ordenes',
